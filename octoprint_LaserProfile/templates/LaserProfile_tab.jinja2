@@ -2,15 +2,73 @@
 
     <div id="laserprofile_plugin_main" class="row-fluid">
         <div id="profilePlot" style="width: 100%; height: 500px;"></div>
-        <div class="row" style="padding-left: 10px;">
+        <div class="col" style="padding-left: 10px;">
             <div class="row" style="padding-left: 20px; padding-bottom: 10px;">
                 <div class="span12">
-                    <label for="scan_file_select">Select Ovality Scan File:</label>
+                    <label for="scan_file_select">Select Scan File:</label>
                     <select id="scan_file_select">
                         <option value="">Loading...</option>
-                    </select>
+                    </select>        
                 </div>
             </div>
-            
+            <div>    
+                <button id="reverseZButton">Reverse Profile</button>
+            </div>
+            <div>
+                <label>Select Action:</label>
+                <select id="actionSelector" data-bind="value: selectedAction">
+                    <option value="zeroPoint">Set Zero Point</option>
+                    <option value="xMax">Set X Max</option>
+                    <option value="xMin">Set X Min</option>
+                </select>
+            </div>
+
+            <div>
+                <label for="smoothingSlider">Smoothing Window Size:</label>
+                 <input type="range" id="smoothingSlider" min="3" max="15" step="2" value="5">
+                <span id="sliderValue">5</span>
+            </div>
+            <button id="applySmoothingButton">Apply Smoothing</button>
+        </div>
+         <div class="col" style="padding-right: 10px;">
+        <div class="span6">
+            <label for="toollength">Rotation center to surface (mm):
+            <input id="toollength" type="number" value="1" step="any" data-bind="value: tool_length">
+            </label>
+        </div>
+        <div class="span6">
+            <label for="segment">Segments:
+            <input id="segment" type="number" value="96" step="any" data-bind="value: segments">
+            </label>
+        </div>
+        <div class="span6">
+            <label for="maxB">Maximum B-angle:
+            <input id="maxB" type="number" value="1" step="any" data-bind="value: max_B">
+            </label>
+        </div>
+        <div class="span6">
+            <label for="minB">Minimum B-angle:
+            <input id="minB" type="number" value="1" step="any" data-bind="value: min_B">
+            </label>
+        </div>
+        <div class="span6">
+            <label for="power">Laser Power:
+            <input id="power" type="number" value="1000" step="any" data-bind="value: power">
+            </label>
+        </div>
+        <div class="span6">
+            <label for="feed">Nominal Feedrate (mm/min):
+            <input id="feed" type="number" value="1000" step="any" data-bind="value: feed">
+            </label>
+        </div>
+        <div class="span4">
+            <label for="test">Test pass:
+            <input id="test" type="checkbox" checked data-bind="checked: test">
+            </label>
+        </div>
+        <div class="span3" style="padding-left: 10px;">
+            <button id="write_gcode_button" class="btn btn-primary" data-bind="click: writeGCode">Write Job</button>
         </div>
     </div>
+    </div>
+   
