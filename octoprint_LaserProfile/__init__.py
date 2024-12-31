@@ -13,6 +13,7 @@ import octoprint.plugin
 import octoprint.filemanager
 import octoprint.filemanager.util
 import octoprint.util
+import logging
 import re
 import os
 import math
@@ -115,12 +116,9 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         command_list = []
         pass_list = []
         A_rot = 360/self.segments
-        #not including any feed or power yet
-        #assume starting at first X coord
-        #Do all preamble stuff here
+        #Preamble stuff here
         command_list.append("G21")
         command_list.append("G90")
-        command_list.append("BYPASS")
         #move to start
         start = self.get_coords(self.x_coords[0])
         command_list.append(f"G0 X{start['X']:0.4f} Z{start['Z']:0.4f} B{start['B']:0.4f}")
@@ -164,28 +162,44 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
 
     def get_api_commands(self):
         return dict(
-            write_job=[]
+            write_job=[],
+            go_to_position=[]
         )
     
     def on_api_command(self, command, data):
         
+        plot_data = data["plot_data"]
+        self.tool_length = float(data["tool_length"])
+        self.x_steps = float(data["x_steps"])
+        self.max_B = float(data["max_B"])
+        self.min_B = float(data["min_B"])
+        self.test = bool(data["test"])
+        self.power = int(data["power"])
+        self.feed = int(data["feed"])
+        self.start_max = bool(data["start"])
+        self.segments = int(data["segments"])
+        Z_clearance = float(data["z_clear"])
+        self.x_coords = []
+        self.z_coords = []
+        for each in plot_data:
+            self.x_coords.append(float(each["x"]))
+            self.z_coords.append(float(each["z"]))
         if command == "write_job":
-            plot_data = data["plot_data"]
-            self.tool_length = float(data["tool_length"])
-            self.x_steps = float(data["x_steps"])
-            self.max_B = float(data["max_B"])
-            self.min_B = float(data["min_B"])
-            self.test = bool(data["test"])
-            self.power = int(data["power"])
-            self.feed = int(data["feed"])
-            self.start_max = bool(data["start"])
-            self.segments = int(data["segments"])
-            self.x_coords = []
-            self.z_coords = []
-            for each in plot_data:
-                self.x_coords.append(float(each["x"]))
-                self.z_coords.append(float(each["z"]))
+            
             self.generate_job()
+
+        if command == "go_to_position":
+            self._logger.info(self.x_coords)
+            #Move to Z-clearance + 10 mm
+            gcode = ["G90","G21",f"G0 Z{10+Z_clearance:0.4f}"]
+            #calculate position
+            coord = self.get_coords(self.x_coords[1])
+            gcode.append(f"G93 G90 G1 X{coord['X']:0.4f} F{self.feed}")
+            gcode.append(f"G93 G90 G1 Z{coord['Z']:0.4f} B{coord['B']:0.4f} F{self.feed}")
+            gcode.append(f"M3 S5")
+            self._logger.info(gcode)
+            #self._printer.commands
+
 
     def get_update_information(self):
         # Define the configuration for your plugin to use with the Software Update
