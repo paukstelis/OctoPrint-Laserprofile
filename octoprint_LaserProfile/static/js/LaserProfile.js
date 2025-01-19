@@ -12,16 +12,40 @@ $(function() {
         self.tool_length = ko.observable(135);
         self.min_B = ko.observable(-45);
         self.max_B = ko.observable(45);
-        self.power = ko.observable(250);
-        self.feed = ko.observable(200);
-        self.test = ko.observable(1);
         self.start_max = ko.observable(0);
         self.x_steps = ko.observable(1.0);
-        self.segments = ko.observable(100);
         self.reversed = false;
         self.isZFile = false;
         self.isXFile = false;
+
+        self.wrapfiles = null;
+        self.scans = null;
+
+        //Laser
+        self.power = ko.observable(250);
+        self.feed = ko.observable(200);
+        self.test = ko.observable(1);
+        self.segments = ko.observable(100);
+        //Fluting/wrapping
+        self.scale = false;
+        self.refdiam = ko.observable(0);
+        self.refset = null;
+        self.referenceZ = null;
+        self.width = 0;
+        self.selectedGCodeFile = null;
+
+        self.mode = ko.observable("none");
         
+        self.onModeChange = function () {
+            if (self.mode() === "wrap") {
+                $(".laser").hide();
+                $(".wrap").show();
+                self.fetchWrapFiles(); // Fetch GCode files for wrap mode
+            } else {
+                $(".laser").show();
+                $(".wrap").hide();
+            }
+        }
 
         // Fetch the list of .txt files from the uploads/scans directory
         self.fetchProfileFiles = function() {
@@ -38,6 +62,20 @@ $(function() {
                 });
         };
 
+        self.fetchWrapFiles = function() {
+            OctoPrint.files.listForLocation("local/wrap", false)
+                .done(function(data) {
+                    var files = data.children;
+                    console.log(files);
+                    files.sort((a,b) => { return a.name.localeCompare(b.name) });
+                    self.wrapfiles = files;
+                    populateFileSelector(files, "#wrapFileSelect", "gcode");
+                })
+                .fail(function() {
+                    console.error("Failed to fetch GCode files.");
+                });
+        };
+
         function populateFileSelector(files, elem, type) {
             var fileSelector = $(elem);
             fileSelector.empty();
@@ -47,14 +85,22 @@ $(function() {
                     .text(file.display)
                     .attr("value", file.name)
                     .attr("download",file.refs.download)
-                    .attr("index", i); // Store metadata in data attribute
+                    .attr("index", i);
                 fileSelector.append(option);
             });
         }
 
         self.onBeforeBinding = function () {
             self.fetchProfileFiles();
+            $(".laser").hide();
+            $(".wrap").hide();
         };
+
+        // Bind mode change event
+        $("#modeSelect").on("change", function () {
+            self.mode($(this).val());
+            self.onModeChange();
+        });
 
         // Function to plot the profile using Plotly
         function plotProfile(isZFile) {
@@ -202,12 +248,38 @@ $(function() {
                                     ay: 20
                                 });
                                 plotProfile(false);
-                            } 
+                            }
+                            
+                            else if (self.markerAction() === "refset") {
+                                self.annotations = self.annotations.filter(a => a.text.startsWith('D'));
+                                self.referenceZ = clickedZ;
+                                self.annotations.push({
+                                    x: clickedX,
+                                    y: clickedZ,
+                                    xref: 'x',
+                                    yref: 'y',
+                                    text: 'D='+self.refdiam(),
+                                    showarrow: true,
+                                    arrowhead: 2,
+                                    ax: 0,
+                                    ay: 40
+                                });
+                                plotProfile(false);
+                            }
                         }
                     }
                 });
             });
         }
+
+        $("#wrapFileSelect").on("change", function () {
+            var filePath = $("#wrapFileSelect option:selected").attr("download");
+            if (!filePath) return;
+            var theindex = $("#wrapFileSelect option:selected").attr("index");
+            var bgs_width = self.wrapfiles[theindex]["bgs_width"];
+            self.selectedGCodeFile = self.wrapfiles[theindex];
+            self.width = bgs_width;
+        });
 
         // When a file is selected, load and plot the profile
         $("#scan_file_select").on("change", function () {
@@ -316,37 +388,35 @@ $(function() {
         }
 
         self.getPointsInRange = function() {
-            var vMin = self.vMin !== null ? self.vMin : Math.min(...self.xValues);
-            var vMax = self.vMax !== null ? self.vMax : Math.max(...self.xValues);
-            
             var pointsInRange = [];
-        
             for (var i = 0; i < self.xValues.length; i++) {
-                if (self.xValues[i] >= vMin && self.xValues[i] <= vMax) {
-                    pointsInRange.push({ x: self.xValues[i], z: self.zValues[i].toFixed(2) });
-                }
+                pointsInRange.push({ x: self.xValues[i], z: self.zValues[i].toFixed(2) });
             }
-        
             return pointsInRange;
         };
 
         self.writeGCode = function() {
             //Plot data from min_X to max_X
+            var clearance = Math.max(...self.zValues);
             var plot = self.getPointsInRange();
-            
-            console.log(plot);
+            //console.log(plot);
             var data = {
                 plot_data: plot,
+                mode: self.mode(),
                 tool_length: self.tool_length(),
                 max_B: self.max_B(),
                 min_B: self.min_B(),
                 power: self.power(),
                 feed: self.feed(),
                 test: self.test(),
-                start: self.start_max(),
-                x_steps: self.x_steps(),
                 segments: self.segments(),
+                vMax: self.vMax,
+                vMin: self.vMin,
+                filename: self.selectedGCodeFile,
+                diam: self.refdiam(),
                 z_clear: clearance,
+                refZ: self.referenceZ,
+
             };
     
             OctoPrint.simpleApiCommand("LaserProfile", "write_job", data)
@@ -361,18 +431,15 @@ $(function() {
         self.gotoposition = function() {
             //check length of target_Position
             var clearance = Math.max(...self.zValues);
+            var plot = self.getPointsInRange();
             var data = {
-                plot_data: self.target_position,
+                plot_data: plot,
+                target: self.target_position,
                 tool_length: self.tool_length(),
                 max_B: self.max_B(),
                 min_B: self.min_B(),
-                power: self.power(),
-                feed: self.feed(),
-                test: self.test(),
-                start: self.start_max(),
-                x_steps: self.x_steps(),
-                segments: self.segments(),
                 z_clear: clearance,
+                mode: "target",
             };
             console.log(data);
             OctoPrint.simpleApiCommand("LaserProfile", "go_to_position", data)

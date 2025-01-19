@@ -17,6 +17,7 @@ import logging
 import re
 import os
 import math
+from . import G_Code_Rip as G_Code_Rip
 
 class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
     octoprint.plugin.AssetPlugin,
@@ -42,6 +43,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
 
     def initialize(self):
         self.datafolder = self.get_plugin_data_folder()
+        self.gcr = G_Code_Rip.G_Code_Rip()
     ##~~ SettingsPlugin mixin
 
     def get_settings_defaults(self):
@@ -112,22 +114,101 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         coord = {"X": x_center, "Z": z_center-self.tool_length, "B": b_angle}
         return coord
     
+    def calc_coords(self, coord):
+        from scipy.interpolate import CubicSpline
+        profile = []
+        for each in self.plot_data:
+            x = float(each["x"])
+            z = float(each["z"])
+            profilecoord = [x,z]
+            profile.append(profilecoord)
+        x_profile, z_profile = zip(*profile)
+        spline = CubicSpline(x_profile, z_profile)
+        z_value = spline(coord)
+        slope = spline.derivative()(coord)
+        tangent_angle = math.atan(slope)
+        b_angle = math.degrees(tangent_angle)
+        if b_angle > 0 and b_angle > self.max_B:
+            b_angle = self.max_B
+        if b_angle < 0 and b_angle < self.min_B:
+            b_angle = self.min_B
+        tangent_angle = math.radians(b_angle)
+        normal_angle = tangent_angle + math.pi / 2
+        x_center = coord + (self.tool_length) * math.cos(normal_angle)
+        z_center = z_value + (self.tool_length) * math.sin(normal_angle)
+        return_coord = {"X": x_center, "Z": z_center-self.tool_length, "B": b_angle}
+        return return_coord
+    
+    def generate_wrap(self):
+        #create profile from diameter reference
+        profile = []
+        for each in self.plot_data:
+            x = float(each["x"])
+            z = float(each["z"])
+            coord = [x,z]
+            profile.append(coord)
+        self._logger.info(profile)
+        gcr = G_Code_Rip.G_Code_Rip()
+        basefolder = self._settings.getBaseFolder("uploads")
+        gcr.Read_G_Code(f"{basefolder}/{self.selected_file}", XYarc2line=True, units="mm")
+        output_name = "aname"
+        output_path = output_name+self.template_name
+        path_on_disk = "{}/{}".format(self._settings.getBaseFolder("watched"), output_path)
+        #calculate scalefactor
+        profile_dist = self.vMax - self.vMin
+        path_sf = profile_dist/self.width
+        self._logger.info(f"Profile distance: {profile_dist}, Scale factor: {path_sf}")
+        #have to go back and handle z cases too
+        temp,minx,maxx,miny,maxy,minz,maxz  = gcr.scale_rotate_code(gcr.g_code_data,
+                                                                    [path_sf,1,1,1],
+                                                                    0,
+                                                                    split_moves=True,
+                                                                    min_seg_length=0.4)
+        #self._logger.info(temp)
+        midx = (minx+maxx)/2
+        midy = (miny+maxy)/2
+        self._logger.info(self.plot_data)
+        self._logger.info(f"midx: {midx}")
+        #calculate offset, just x for now
+        #xoffset = (self.vMax+self.vMin)/2 + self.vMin
+        xoffset = abs(minx) + self.vMin
+        self._logger.info(f"X offset: {xoffset}")
+        temp = gcr.scale_translate(temp,translate=[-xoffset,0,0.0])
+        temp = gcr.profile_conform(temp,profile,self.min_B,self.max_B,self.tool_length,self.diam/2)
+        #self._logger.info(temp)
+        output_name = "wraptest.gcode"
+        path_on_disk = "{}/{}".format(self._settings.getBaseFolder("watched"), output_name)
+        
+        with open(path_on_disk,"w") as newfile:
+            for line in gcr.generategcode(temp,Rstock=self.diam/2,no_variables=True,Wrap="SPECIAL",FSCALE="None"):
+                newfile.write(f"\n{line}")
+
+    
     def generate_job(self):
         command_list = []
         pass_list = []
+        profile_points = []
+        #truncate profile beween vMin and vMax
+        for each in self.x_coords:
+            if each < self.vMin:
+                continue
+            if each > self.vMax:
+                continue
+            profile_points.append(each)
+
         A_rot = 360/self.segments
         #Preamble stuff here
         command_list.append("G21")
         command_list.append("G90")
         #move to start
-        start = self.get_coords(self.x_coords[0])
+        start = self.get_coords(profile_points[0])
         command_list.append(f"G0 X{start['X']:0.4f} Z{start['Z']:0.4f} B{start['B']:0.4f}")
         if self.test:
             command_list.append("M4 S5")
         else:
             command_list.append(f"M4 S{self.power}")
 
-        for each in self.x_coords:
+        for each in profile_points:
             coord = self.get_coords(each)
             pass_list.append(f"G93 G90 G1 X{coord['X']:0.4f} Z{coord['Z']:0.4f} B{coord['B']:0.4f} F{self.feed}")
 
@@ -168,37 +249,62 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
     
     def on_api_command(self, command, data):
         
-        plot_data = data["plot_data"]
+        self.plot_data = data["plot_data"]
+        self.mode = data["mode"]
         self.tool_length = float(data["tool_length"])
-        self.x_steps = float(data["x_steps"])
         self.max_B = float(data["max_B"])
         self.min_B = float(data["min_B"])
-        self.test = bool(data["test"])
-        self.power = int(data["power"])
-        self.feed = int(data["feed"])
-        self.start_max = bool(data["start"])
-        self.segments = int(data["segments"])
-        Z_clearance = float(data["z_clear"])
+        self.Z_clearance = float(data["z_clear"])
+
+        #laser specific stuff
+        if self.mode ==  "laser":
+            self.test = bool(data["test"])
+            self.power = int(data["power"])
+            self.feed = int(data["feed"])
+            #self.start_max = bool(data["start"])
+            self.segments = int(data["segments"])
+            self.vMax = float(data["vMax"])
+            self.vMin = float(data["vMin"])
+        if self.mode == "wrap":
+        #wrap specific stuff, this all needs organization
+            self.selected_file = data["filename"]["path"]
+            self.template_name = data["filename"]["display"]
+            self.width = float(data["filename"]["bgs_width"])
+            self.diam = float(data["diam"])
+            self.refZ = float(data["refZ"])
+            self.vMax = float(data["vMax"])
+            self.vMin = float(data["vMin"])
+
         self.x_coords = []
         self.z_coords = []
-        for each in plot_data:
+
+        for each in self.plot_data:
             self.x_coords.append(float(each["x"]))
             self.z_coords.append(float(each["z"]))
+
         if command == "write_job":
-            
-            self.generate_job()
+            if self.mode == "laser":
+                self.generate_job()
+            if self.mode == "wrap":
+                self.generate_wrap()
 
         if command == "go_to_position":
+            self.target = float(data["target"])
             self._logger.info(self.x_coords)
             #Move to Z-clearance + 10 mm
-            gcode = ["G90","G21",f"G0 Z{10+Z_clearance:0.4f}"]
-            #calculate position
-            coord = self.get_coords(self.x_coords[1])
-            gcode.append(f"G93 G90 G1 X{coord['X']:0.4f} F{self.feed}")
-            gcode.append(f"G93 G90 G1 Z{coord['Z']:0.4f} B{coord['B']:0.4f} F{self.feed}")
-            gcode.append(f"M3 S5")
+            gcode = ["G90","G21",f"G0 Z{10+self.Z_clearance:0.4f}"]
+            #calculate position, original way
+            #coord = self.get_coords(self.target)
+            #gcode.append(f"G93 G90 G1 X{coord['X']:0.4f} F200")
+            #gcode.append(f"G93 G90 G1 Z{coord['Z']:0.4f} B{coord['B']:0.4f} F200")
+            #gcode.append(f"M3 S5")
+            #calculate position, calc way
+            coord = self.calc_coords(self.target)
+            gcode.append(f"G93 G90 G1 X{coord['X']:0.4f} F200")
+            gcode.append(f"G93 G90 G1 Z{coord['Z']:0.4f} B{coord['B']:0.4f} F200")
+
             self._logger.info(gcode)
-            #self._printer.commands
+            self._printer.commands(gcode)
 
 
     def get_update_information(self):

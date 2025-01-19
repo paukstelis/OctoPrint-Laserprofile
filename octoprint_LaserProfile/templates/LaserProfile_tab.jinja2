@@ -1,91 +1,111 @@
 <!-- laser_profile_tab.jinja2 -->
 
 <div id="laserprofile_plugin_main" class="row-fluid">
+    <div>
+        <label for="modeSelect">Mode:</label>
+        <select id="modeSelect" data-bind="value: mode">
+            <option value="none"></option>
+            <option value="laser">Laser</option>
+            <option value="wrap">Wrap</option>
+        </select>
+    </div>
+    
+    <div>    
+        <button id="reverseZButton">Reverse Profile</button>
+    </div>
+
     <div id="profilePlot" style="width: 100%; height: 500px;"></div>
-
-        <div style="width: 300px; float: left;">
-            
-                <div>
-                    <label for="scan_file_select">Select Scan File:</label>
-                    <select id="scan_file_select">
-                        <option value="">Loading...</option>
-                    </select>        
-                </div>
-           
-            <div>    
-                <button id="reverseZButton">Reverse Profile</button>
-            </div>
-
-            <div>
-                <label for="toollength">Rotation center to surface (mm):</label>
-                <input id="toollength" type="number" value="1" step="any" data-bind="value: tool_length">
-            
-            </div>
-
-            <div>
-                <label for="segment">Segments:</label>
-                <input id="segment" type="number" value="96" step="any" data-bind="value: segments">
-                
-            </div>
-            
-            <div>
-                <label for="feed">Nominal Feedrate (mm/min):</label>
-                <input id="feed" type="number" value="1000" step="any" data-bind="value: feed">
-                
-            </div>
-
-            <div>
-                <label for="test">Test pass:
-                <input id="test" type="checkbox" checked data-bind="checked: test">
-                </label>
-            </div>
+    <div style="width: 300px; float: left;">
+        <div>
+            <label for="scan_file_select">Select Scan File:</label>
+                <select id="scan_file_select">
+                    <option value="">Loading...</option>
+                </select>        
         </div>
 
-        <div style="margin-left: 310px;">
-            <div>
-                <label>Marker Selection:</label>
-                <select id="markerSelector" data-bind="value: markerAction">
-                    <option value="zeroPoint">Set Zero</option>
-                    <option value="Max">Set Max Limit</option>
-                    <option value="Min">Set Min Limit</option>
-                    <option value="targetPoint">Set Target</option>
-                </select>
-            </div>
+        <div class="wrap" id="wrapFileSelectContainer" style="display: none;">
+            <label for="wrapFileSelect">Wrap Gcode:</label>
+            <select id="wrapFileSelect">
+                <option value="">Loading...</option>
+            </select>
+        </div>
 
-            <div>
-                <label for="smoothingSlider">Smoothing Window Size:</label>
-                 <input type="range" id="smoothingSlider" min="3" max="15" step="2" value="5">
+        <div class="wrap">
+            <label for="refdiam">Diameter at reference (mm):</label>
+            <input id="refdiam" type="number" value="0" step="any" data-bind="value: refdiam">  
+        </div>   
+
+        <div>
+            <label for="toollength">Rotation center to surface (mm):</label>
+            <input id="toollength" type="number" value="1" step="any" data-bind="value: tool_length">
+            
+        </div>
+
+        <div class="laser">
+            <label for="segment">Segments:</label>
+            <input id="segment" type="number" value="96" step="any" data-bind="value: segments">
+                
+        </div>
+            
+        <div class="laser">
+            <label for="feed">Nominal Feedrate (mm/min):</label>
+            <input id="feed" type="number" value="1000" step="any" data-bind="value: feed">            
+        </div>
+
+                <div id="laserPower" class="laser">
+            <label for="power">Laser Power:
+            <input id="power" type="number" value="1000" step="any" data-bind="value: power">
+            </label>
+        </div>
+
+        <div class="laser">
+            <label for="test">Test pass:
+            <input id="test" type="checkbox" checked data-bind="checked: test">
+            </label>
+        </div>
+    </div>
+
+    <div style="margin-left: 310px;">
+        <div>
+            <label>Marker Selection:</label>
+            <select id="markerSelector" data-bind="value: markerAction">
+                <option value="zeroPoint">Set Zero</option>
+                <option class="wrap" value="wrapzero">Gcode Zero</option>
+                <option class="wrap" value="refset">Diameter Reference</option>
+                <option value="Max">Set Max Limit</option>
+                <option value="Min">Set Min Limit</option>
+                <option value="targetPoint">Set Target</option>
+            </select>
+        </div>
+
+        <div>
+            <label for="smoothingSlider">Smoothing Window Size:</label>
+            <input type="range" id="smoothingSlider" min="3" max="15" step="2" value="5">
                 <span id="sliderValue">5</span>
                 <button id="applySmoothingButton">Apply Smoothing</button>
-            <div>
-                
-
-            <div>
-                <label for="maxB">Maximum B-angle:
-                <input id="maxB" type="number" value="1" step="any" data-bind="value: max_B">
-                </label>
-            </div>
-
-            <div>
-                <label for="minB">Minimum B-angle:
-                <input id="minB" type="number" value="1" step="any" data-bind="value: min_B">
-                </label>
-            </div>
-
-            <div>
-                <label for="power">Laser Power:
-                <input id="power" type="number" value="1000" step="any" data-bind="value: power">
-                </label>
-            </div>
         </div>
-        <hr>
                 
+
+        <div>
+            <label for="maxB">Maximum B-angle:
+            <input id="maxB" type="number" value="1" step="any" data-bind="value: max_B">
+            </label>
+        </div>
+
+        <div>
+            <label for="minB">Minimum B-angle:
+            <input id="minB" type="number" value="1" step="any" data-bind="value: min_B">
+            </label>
+        </div>
+
+
     </div>
-    </div>
+    <hr>
+
     <div style="padding-left: 10px; float: left;">
                 <button id="write_gcode_button" class="btn btn-primary" data-bind="click: writeGCode">Write Job</button>
     </div>
-        <div style="padding-right: 10px; float: right;">
+    <div style="padding-right: 10px; float: right;">
                 <button id="target_button" class="btn btn-primary" data-bind="click: gotoposition">Go to Target</button>
     </div>
 </div>
