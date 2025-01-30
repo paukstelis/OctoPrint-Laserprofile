@@ -144,9 +144,10 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         #B angle smoothing, would be nice if there was more control for this
         slopes = []
         coord_i = self.x_coords.index(coord)
+        smoothing = 2
         slopes.append(coord)
-        slopes.extend(self.x_coords[max(0, coord_i-2):coord_i])
-        slopes.extend(self.x_coords[coord_i+1:coord_i+3])
+        slopes.extend(self.x_coords[max(0, coord_i-smoothing):coord_i])
+        slopes.extend(self.x_coords[coord_i+1:coord_i+smoothing+1])
         s=0
         
         for each in slopes:
@@ -200,7 +201,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             if each > self.vMax:
                 continue
             profile_points.append(each)
-        #A axis rotation per segment
+        #A axis rotation per segment- this is very simplistic. Maybe calculate total distance and fraction of that total distace per move?
         seg_rot = self.arotate/(len(profile_points)-1)
         self._logger.info(f"Segment rotation: {seg_rot}")
         A_rot = 360/self.segments
