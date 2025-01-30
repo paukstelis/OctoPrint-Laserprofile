@@ -46,13 +46,22 @@
             <input id="segment" type="number" value="96" step="any" data-bind="value: segments">
                 
         </div>
+
+        <div class="zscan">
+            <label>Tool direction:</label>
+            <select id="tooldirection" data-bind="value: side">
+                <option value="none"></option>
+                <option value="front">Front (X+)</option>
+                <option value="back">Back (X-)</option>
+            </select>
+        </div>
             
         <div class="laser">
             <label for="feed">Nominal Feedrate (mm/min):</label>
             <input id="feed" type="number" value="1000" step="any" data-bind="value: feed">            
         </div>
 
-                <div id="laserPower" class="laser">
+        <div id="laserPower" class="laser">
             <label for="power">Laser Power:
             <input id="power" type="number" value="1000" step="any" data-bind="value: power">
             </label>
@@ -95,6 +104,12 @@
         <div>
             <label for="minB">Minimum B-angle:
             <input id="minB" type="number" value="1" step="any" data-bind="value: min_B">
+            </label>
+        </div>
+
+        <div>
+            <label for="Arot">A-axis rotation:
+            <input id="Arot" type="number" value="1" step="any" data-bind="value: Arot">
             </label>
         </div>
 

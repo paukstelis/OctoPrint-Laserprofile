@@ -10,10 +10,12 @@ $(function() {
         self.annotations = [];
         self.markerAction = ko.observable("zeroPoint");
         self.tool_length = ko.observable(135);
-        self.min_B = ko.observable(-45);
-        self.max_B = ko.observable(45);
+        self.min_B = ko.observable(-180);
+        self.max_B = ko.observable(180);
         self.start_max = ko.observable(0);
         self.x_steps = ko.observable(1.0);
+        self.side = ko.observable("front");
+        self.Arot = ko.observable(0);
         self.reversed = false;
         self.isZFile = false;
         self.isXFile = false;
@@ -24,8 +26,8 @@ $(function() {
         //Laser
         self.power = ko.observable(250);
         self.feed = ko.observable(200);
-        self.test = ko.observable(1);
-        self.segments = ko.observable(100);
+        self.test = ko.observable(0);
+        self.segments = ko.observable(10);
         //Fluting/wrapping
         self.scale = false;
         self.refdiam = ko.observable(0);
@@ -85,6 +87,7 @@ $(function() {
                     .text(file.display)
                     .attr("value", file.name)
                     .attr("download",file.refs.download)
+                    .attr("path",file.path)
                     .attr("index", i);
                 fileSelector.append(option);
             });
@@ -94,6 +97,7 @@ $(function() {
             self.fetchProfileFiles();
             $(".laser").hide();
             $(".wrap").hide();
+            $(".zscan").hide();
         };
 
         // Bind mode change event
@@ -283,57 +287,28 @@ $(function() {
 
         // When a file is selected, load and plot the profile
         $("#scan_file_select").on("change", function () {
-            var filePath = $("#scan_file_select option:selected").attr("download");
+            var filePath = $("#scan_file_select option:selected").attr("path");
+            console.log(filePath);
             if (!filePath) return;
         
             // Determine the mode based on the file name
             self.isZFile = $("#scan_file_select option:selected").text().startsWith("Z");
             self.isXFile = $("#scan_file_select option:selected").text().startsWith("X");
+
+            if (self.isZFile) {
+                $(".zscan").show();
+            }
+            else {
+                $(".zscan").hide();
+            }
+
             self.annotations = [];
             self.vMax = null;
             self.vMin = null;
 
-            // Load the selected file
-            $.ajax({
-                url: filePath,
-                type: "GET",
-                success: function (fileData) {
-                    self.xValues = [];
-                    self.zValues = [];
-                    var firstX = null, firstZ = null;
-        
-                    // Split the file into lines
-                    var lines = fileData.split('\n');
-        
-                    lines.forEach(function (line) {
-                        // Ignore lines that start with a semicolon
-                        if (line.trim().startsWith(';')) return;
-        
-                        // Split the line by comma to get X and Z values
-                        var parts = line.split(',');
-                        if (parts.length !== 2) return;
-        
-                        var x = parseFloat(parts[0].trim());
-                        var z = parseFloat(parts[1].trim());
-        
-                        // Capture the first point for normalization
-                        if (firstX === null && firstZ === null) {
-                            firstX = x;
-                            firstZ = z;
-                        }
-        
-                        // Normalize the values (first point becomes 0,0)
-                        self.xValues.push(x - firstX);
-                        self.zValues.push(z - firstZ);
-                    });
-        
-                    // Plot the profile with appropriate Z-axis autorange
-                    plotProfile(self.isZFile);
-                },
-                error: function (err) {
-                    console.error("Error loading file: ", err);
-                }
-            });
+            // Send the file info off
+            self.createGraph(filePath);
+            
         });
         
 
@@ -390,14 +365,55 @@ $(function() {
         self.getPointsInRange = function() {
             var pointsInRange = [];
             for (var i = 0; i < self.xValues.length; i++) {
-                pointsInRange.push({ x: self.xValues[i], z: self.zValues[i].toFixed(2) });
+                pointsInRange.push({ x: self.xValues[i], z: self.zValues[i] });
             }
             return pointsInRange;
         };
 
+        self.onDataUpdaterPluginMessage = function(plugin, data) {
+            if (plugin == 'LaserProfile' && data.type == 'graph' && data.axis == 'X') {
+                self.xValues = data.probe.map(point => point[0]);
+                self.zValues = data.probe.map(point => point[1]);
+                plotProfile(self.isZFile);
+            }
+
+            if (plugin == 'LaserProfile' && data.type == 'graph' && data.axis == 'Z') {
+                self.xValues = data.probe.map(point => point[1]);
+                self.zValues = data.probe.map(point => point[0]);
+                plotProfile(self.isZFile);
+            }
+        }
+
+        //transmit the file path. It will be procesed and data sent back
+        self.createGraph = function(filePath) {
+            var data = {
+                filepath: filePath
+            };
+
+            OctoPrint.simpleApiCommand("LaserProfile", "creategraph", data)
+                .done(function(response) {
+                    console.log("Graph info transmitted");
+                })
+                .fail(function() {
+                    console.error("Graph info not transmitted");
+                });
+
+        };
+
         self.writeGCode = function() {
-            //Plot data from min_X to max_X
-            var clearance = Math.max(...self.zValues);
+            //Data sanity checking
+            if (self.isZFile && self.side == "none") {
+                alert("Tool direction must be set for Z scan jobs.");
+                return;
+            }
+
+            if (self.isZFile) {
+                var clearance = Math.max(...self.xValues);
+            }
+            else {
+                var clearance = Math.max(...self.zValues);
+            }
+
             var plot = self.getPointsInRange();
             //console.log(plot);
             var data = {
@@ -414,8 +430,10 @@ $(function() {
                 vMin: self.vMin,
                 filename: self.selectedGCodeFile,
                 diam: self.refdiam(),
-                z_clear: clearance,
+                clear: clearance,
                 refZ: self.referenceZ,
+                arotate: self.Arot(),
+                side: self.side(),
 
             };
     
@@ -429,8 +447,25 @@ $(function() {
         };
 
         self.gotoposition = function() {
-            //check length of target_Position
-            var clearance = Math.max(...self.zValues);
+            //Data sanity checking
+            if (self.isZFile && self.side == "none") {
+                alert("Tool direction must be set for Z scans");
+                return;
+            }
+    
+            if (self.isZFile) {
+                if (self.side === "back") {
+                    var clearance = Math.abs(Math.min(...self.xValues));
+                }
+                else {
+                    var clearance = Math.max(...self.xValues);
+                }
+            }
+
+            else {
+                var clearance = Math.max(...self.zValues);
+            }
+
             var plot = self.getPointsInRange();
             var data = {
                 plot_data: plot,
@@ -438,7 +473,8 @@ $(function() {
                 tool_length: self.tool_length(),
                 max_B: self.max_B(),
                 min_B: self.min_B(),
-                z_clear: clearance,
+                clear: clearance,
+                side: self.side,
                 mode: "target",
             };
             console.log(data);
