@@ -94,26 +94,31 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             datapoints = sorted(datapoints, key=lambda x: x[0])
             min = datapoints[0][0] #smallest X value, should be 0
             max = datapoints[-1][0] #largest X value
+
         self._logger.info(datapoints)
         self._logger.info(self.axis)
+
         generated_data = []
+
         if self.axis == 'Z':
             z_profile, x_profile = zip(*datapoints)
         else:
             x_profile, z_profile = zip(*datapoints)
+
         self.spline = CubicSpline(x_profile, z_profile)
 
-        increment = 0.5
+        increment = 0.5 #should this be adjustable?
         i = min
         while i <= max:
             z_val = self.spline(i)
             z_val = float(z_val)
-            z_val = "{:.3f}".format(z_val)
-            x_val = "{:.3f}".format(i)
+            z_val = f"{z_val:.3f}"
+            x_val = f"{x_val:.3f}"
             generated_data.append([x_val,z_val])
             i = i+increment
         self._logger.info(generated_data)
-        #send generated_data to plotly
+
+        #send generated_data to plotly at the front end
         data = dict(type="graph", probe=generated_data, axis=self.axis)
         self._plugin_manager.send_plugin_message('LaserProfile', data)
 
@@ -122,7 +127,6 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         self.z_coords = []
 
         if self.axis == "X":
-
             for each in self.plot_data:
                 self.x_coords.append(float(each["x"]))
                 self.z_coords.append(float(each["z"]))
@@ -136,6 +140,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
     def calc_coords(self, coord):
         if coord not in self.x_coords:
             raise ValueError("Value is not in list")
+        
         #B angle smoothing, would be nice if there was more control for this
         slopes = []
         coord_i = self.x_coords.index(coord)
@@ -143,36 +148,40 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         slopes.extend(self.x_coords[max(0, coord_i-2):coord_i])
         slopes.extend(self.x_coords[coord_i+1:coord_i+3])
         s=0
+        
         for each in slopes:
             s = s + self.spline.derivative()(each)
         z_value = self.spline(coord)
+        
         #Average of slope
         slope = s/len(slopes)
-        #normal
-        self.side = "front"
+        
+        #normal angle calculation
         if self.axis == "X":
             normal = math.atan2(slope, 1)
         if self.axis == "Z" and self.side == "back":
             normal = math.atan2(1/abs(slope), 1)
         if self.axis == "Z" and self.side == "front":
             normal = math.atan2(1/abs(slope),1) - math.pi
-        self._logger.info(normal)
+        
         b_angle = math.degrees(normal)
-        self._logger.info(normal, b_angle)
+        
         #adjust normal angle if beyond limits
         if b_angle > 0 and b_angle > self.max_B:
             b_angle = self.max_B
         if b_angle < 0 and b_angle < self.min_B:
             b_angle = self.min_B
+        #recalculate normal in case it is outside B range
         normal = math.radians(b_angle)
         
-        #normal_angle = tangent_angle
         self._logger.info(f"Normal angle: {normal}, slope: {slope},  B angle: {b_angle}")
+        
         if self.axis == "X":
             normal = normal + math.pi / 2 
             x_center = coord + ((self.tool_length) * math.cos(normal))
             z_center = z_value + ((self.tool_length) * math.sin(normal))
             return_coord = {"X": x_center, "Z": z_center-self.tool_length, "B": b_angle}
+        #may need to have this specific for front and back cases
         if self.axis == "Z":
             x_center = coord + ((self.tool_length) * math.sin(normal))
             z_center = z_value - ((self.tool_length) * math.cos(normal))
@@ -183,6 +192,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         command_list = []
         pass_list = []
         profile_points = []
+        
         #truncate profile beween vMin and vMax
         for each in self.x_coords:
             if each < self.vMin:
@@ -190,7 +200,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             if each > self.vMax:
                 continue
             profile_points.append(each)
-
+        #A axis rotation per segment
         seg_rot = self.arotate/(len(profile_points)-1)
         self._logger.info(f"Segment rotation: {seg_rot}")
         A_rot = 360/self.segments
@@ -205,13 +215,15 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             command_list.append("M4 S5")
         else:
             command_list.append(f"M4 S{self.power}")
+        
+        #this is to handle A rotations
         i = -1
         for each in profile_points:
             i+=1 
             coord = self.calc_coords(each)
-            pass_list.append(f"G93 G90 G1 X{coord['X']:0.4f} Z{coord['Z']:0.4f} A{seg_rot*i:0.4f} B{coord['B']:0.4f} F{self.feed}")
+            pass_list.append(f"G93 G90 G1 X{coord['X']:0.3f} Z{coord['Z']:0.3f} A{seg_rot*i:0.3f} B{coord['B']:0.3f} F{self.feed}")
         #make sure we move back to last A position before starting reverse pass
-        pass_list.append(f"G0 A{seg_rot*i:0.4f}")    
+        pass_list.append(f"G0 A{seg_rot*i:0.3f}")    
         
         i = 1
         while i <= self.segments:
@@ -220,7 +232,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             pass_list = pass_list[::-1]
             if self.test and i == 1:
                 command_list.append("G4 P2")
-                command_list.append("(completing test pass)")
+                command_list.append("(test pass)")
                 command_list.extend(pass_list)
                 command_list.append("G4 P2")
                 command_list.append("M0")
