@@ -113,7 +113,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             z_val = self.spline(i)
             z_val = float(z_val)
             z_val = f"{z_val:.3f}"
-            x_val = f"{x_val:.3f}"
+            x_val = f"{i:.3f}"
             generated_data.append([x_val,z_val])
             i = i+increment
         self._logger.info(generated_data)
@@ -249,7 +249,84 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         command_list.append("M5")
         command_list.append("M30")
         #self._logger.info(command_list)
-        output_name = "LASERtest.gcode"
+        #output_name = "LASERtest.gcode"
+        output_name = self.name.removesuffix(".txt")
+        output_name = f"L_S{self.segments}_P{self.power}_"+output_name+".gcode"
+        path_on_disk = "{}/{}".format(self._settings.getBaseFolder("watched"), output_name)
+
+        with open(path_on_disk,"w") as newfile:
+            for line in command_list:
+                newfile.write(f"\n{line}")
+
+    def cut_depth_value(self, coord, depth):
+        trans_x = coord["X"] - depth*math.sin(math.radians(coord["B"]))
+        trans_z = coord["Z"] - depth*math.cos(math.radians(coord["B"]))
+        return trans_x, trans_z
+    
+    def generate_flute_job(self):
+        command_list = []
+        pass_list = []
+        profile_points = []
+        
+        #truncate profile beween vMin and vMax
+        for each in self.x_coords:
+            if each < self.vMin:
+                continue
+            if each > self.vMax:
+                continue
+            profile_points.append(each)
+        #A axis rotation per segment- this is very simplistic. Maybe calculate total distance and fraction of that total distace per move?
+        seg_rot = self.arotate/(len(profile_points)-1)
+        self._logger.info(f"Segment rotation: {seg_rot}")
+        A_rot = 360/self.segments
+
+        #Preamble stuff here
+        command_list.append("G21")
+        command_list.append("G90")
+        #move to start
+        start = self.calc_coords(profile_points[0])
+        command_list.append(f"G0 X{start['X']:0.4f} Z{start['Z']:0.4f} A0 B{start['B']:0.4f}")
+        command_list.append(f"M3 S24000")
+        
+        #this is to handle A rotations
+        i = -1
+        for each in profile_points:
+            i+=1 
+            coord = self.calc_coords(each) #these just follow profile, have to add cut depth
+            #calculate depth on this pass
+            depth = -1
+            #get adjusted values
+            trans_x, trans_z = self.cut_depth_value(coord, depth)
+            pass_list.append(f"G93 G90 G1 X{trans_x:0.3f} Z{trans_z:0.3f} A{seg_rot*i:0.3f} B{coord['B']:0.3f} F{self.feed}")
+        #make sure we move back to last A position before starting reverse pass
+        pass_list.append(f"G0 A{seg_rot*i:0.3f}")    
+        
+        i = 1
+        while i <= self.segments:
+            command_list.append(f"(Starting segment {i} of {self.segments})")
+            command_list.extend(pass_list)
+            pass_list = pass_list[::-1]
+            if self.test and i == 1:
+                command_list.append("G4 P2")
+                command_list.append("(test pass)")
+                command_list.extend(pass_list)
+                command_list.append("G4 P2")
+                command_list.append("M0")
+                command_list.append(f"M4 S{self.power}")
+                pass_list = pass_list[::-1]
+                command_list.extend(pass_list)
+                pass_list = pass_list[::-1]
+            #rotate
+            command_list.append("G0 A0") #return A to 0 first
+            command_list.append(f"G0 A{A_rot:0.3f}")
+            command_list.append("G92 A0")
+            i += 1
+        command_list.append("M5")
+        command_list.append("M30")
+        #self._logger.info(command_list)
+        #output_name = "LASERtest.gcode"
+        output_name = self.name.removesuffix(".txt")
+        output_name = f"L_S{self.segments}_P{self.power}_"+output_name+".gcode"
         path_on_disk = "{}/{}".format(self._settings.getBaseFolder("watched"), output_name)
 
         with open(path_on_disk,"w") as newfile:
@@ -278,12 +355,17 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             self.min_B = float(data["min_B"])
             self.clearance = float(data["clear"])
             self.side = data["side"]
-            #self.name = data["name"]
+            self.name = data["name"]
             self.arotate = float(data["arotate"])
             self.segments = int(data["segments"])
             self.vMax = float(data["vMax"])
             self.vMin = float(data["vMin"])
+            self.feed = int(data["feed"])
             #must sort data first
+            for each in self.plot_data:
+                for k, v in each.items():
+                    each[k] = float(v)
+
             if self.axis == "X":
                 self.plot_data = sorted(self.plot_data, key=lambda x: x["x"])
             if self.axis == "Z":
@@ -294,11 +376,14 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             if self.mode == "laser":
                 self.test = bool(data["test"])
                 self.power = int(data["power"])
-                self.feed = int(data["feed"])
+
                 #self.start_max = bool(data["start"])
                 self.generate_laser_job()
+
             if self.mode == "flute":
-                self.generate_flute()
+                self.depth = float(data["depth"])
+                self.dpp = float(data["dpp"])
+                self.generate_flute_job()
 
 
         if command == "go_to_position":
@@ -310,6 +395,9 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             self.min_B = float(data["min_B"])
             self.side = data["side"]
             #must sort data first
+            for each in self.plot_data:
+                for k, v in each.items():
+                    each[k] = float(v)
             if self.axis == "X":
                 self.plot_data = sorted(self.plot_data, key=lambda x: x["x"])
             if self.axis == "Z":

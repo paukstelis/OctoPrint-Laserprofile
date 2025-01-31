@@ -19,6 +19,7 @@ $(function() {
         self.reversed = false;
         self.isZFile = false;
         self.isXFile = false;
+        self.name = null;
 
         self.wrapfiles = null;
         self.scans = null;
@@ -288,6 +289,7 @@ $(function() {
         // When a file is selected, load and plot the profile
         $("#scan_file_select").on("change", function () {
             var filePath = $("#scan_file_select option:selected").attr("path");
+            self.name = $("#scan_file_select option:selected").attr("value");
             console.log(filePath);
             if (!filePath) return;
         
@@ -434,6 +436,7 @@ $(function() {
                 refZ: self.referenceZ,
                 arotate: self.Arot(),
                 side: self.side(),
+                name: self.name
 
             };
     
@@ -474,7 +477,7 @@ $(function() {
                 max_B: self.max_B(),
                 min_B: self.min_B(),
                 clear: clearance,
-                side: self.side,
+                side: self.side(),
                 mode: "target",
             };
             console.log(data);
