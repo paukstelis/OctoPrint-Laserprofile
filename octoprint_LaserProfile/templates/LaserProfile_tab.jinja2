@@ -6,6 +6,7 @@
         <select id="modeSelect" data-bind="value: mode">
             <option value="none"></option>
             <option value="laser">Laser</option>
+            <option value="flute">Flute</option>
             <option value="wrap">Wrap</option>
         </select>
     </div>
@@ -41,7 +42,7 @@
             
         </div>
 
-        <div class="laser">
+        <div class="laser flute" >
             <label for="segment">Segments:</label>
             <input id="segment" type="number" value="96" step="any" data-bind="value: segments">
                 
@@ -56,7 +57,7 @@
             </select>
         </div>
             
-        <div class="laser">
+        <div class="laser flute">
             <label for="feed">Nominal Feedrate (mm/min):</label>
             <input id="feed" type="number" value="1000" step="any" data-bind="value: feed">            
         </div>
@@ -64,6 +65,18 @@
         <div id="laserPower" class="laser">
             <label for="power">Laser Power:
             <input id="power" type="number" value="1000" step="any" data-bind="value: power">
+            </label>
+        </div>
+
+        <div class="flute">
+            <label for="depth">Total Depth (mm):
+            <input id="depth" type="number" value="1" step="any" data-bind="value: depth">
+            </label>
+        </div>
+
+        <div class="flute">
+            <label for="stepdown">Step Down (mm):
+            <input id="stepdown" type="number" value="1" step="any" data-bind="value: step">
             </label>
         </div>
 
@@ -86,15 +99,7 @@
                 <option value="targetPoint">Set Target</option>
             </select>
         </div>
-
-        <div>
-            <label for="smoothingSlider">Smoothing Window Size:</label>
-            <input type="range" id="smoothingSlider" min="3" max="15" step="2" value="5">
-                <span id="sliderValue">5</span>
-                <button id="applySmoothingButton">Apply Smoothing</button>
-        </div>
                 
-
         <div>
             <label for="maxB">Maximum B-angle:
             <input id="maxB" type="number" value="1" step="any" data-bind="value: max_B">

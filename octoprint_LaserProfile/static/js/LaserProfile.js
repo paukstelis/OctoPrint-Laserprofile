@@ -16,6 +16,8 @@ $(function() {
         self.x_steps = ko.observable(1.0);
         self.side = ko.observable("front");
         self.Arot = ko.observable(0);
+        self.depth = ko.observable(1);
+        self.step = ko.observable(1);
         self.reversed = false;
         self.isZFile = false;
         self.isXFile = false;
@@ -43,10 +45,16 @@ $(function() {
             if (self.mode() === "wrap") {
                 $(".laser").hide();
                 $(".wrap").show();
+                $(".flute").hide();
                 self.fetchWrapFiles(); // Fetch GCode files for wrap mode
-            } else {
+            } else if (self.mode() === "laser") {
                 $(".laser").show();
                 $(".wrap").hide();
+                $(".flute").hide();
+            } else if (self.mode() === "flute") {
+                $(".laser").hide();
+                $(".wrap").hide();
+                $(".flute").show();
             }
         }
 
@@ -367,7 +375,7 @@ $(function() {
         self.getPointsInRange = function() {
             var pointsInRange = [];
             for (var i = 0; i < self.xValues.length; i++) {
-                pointsInRange.push({ x: self.xValues[i], z: self.zValues[i] });
+                pointsInRange.push({ x: parseFloat(self.xValues[i]).toFixed(3), z: parseFloat(self.zValues[i]).toFixed(3) });
             }
             return pointsInRange;
         };
@@ -436,7 +444,9 @@ $(function() {
                 refZ: self.referenceZ,
                 arotate: self.Arot(),
                 side: self.side(),
-                name: self.name
+                name: self.name,
+                depth: self.depth(),
+                step: self.step(),
 
             };
     
