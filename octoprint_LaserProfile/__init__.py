@@ -330,8 +330,8 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             pass_list.append(f"G93 G90 G1 X{trans_x:0.3f} Z{trans_z:0.3f} B{coord['B']:0.3f} F{self.feed}")
             #make sure we move back to last A position before starting next pass
             pass_list.append(f"G0 A{seg_rot*i:0.3f}")
-            #move to clear position, TODO modify this to use "safe axis":
-            sign, safe = self.safe_retract
+            #move to clear position
+            sign, safe = self.safe_retract()
             pass_list.append(f"G0 {sign}{safe}{self.clearance+10}")
             #move to start safe position for next pass:
             pass_list.append(safe_position)    
