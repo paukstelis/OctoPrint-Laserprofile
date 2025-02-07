@@ -331,7 +331,8 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             #make sure we move back to last A position before starting next pass
             pass_list.append(f"G0 A{seg_rot*i:0.3f}")
             #move to clear position, TODO modify this to use "safe axis":
-            pass_list.append(f"G0 Z{self.clearance+10}")
+            sign, safe = self.safe_retract
+            pass_list.append(f"G0 {sign}{safe}{self.clearance+10}")
             #move to start safe position for next pass:
             pass_list.append(safe_position)    
         
@@ -356,6 +357,17 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             for line in command_list:
                 newfile.write(f"\n{line}")
 
+    def safe_retract(self):
+        sign = ""
+        safe = None
+        if self.axis == "X":
+            safe = "Z"
+        if self.axis == "Z":
+            if self.side == "back":
+                sign = "-"
+            safe = "X"
+        return sign, safe
+    
     def get_api_commands(self):
         return dict(
             write_job=[],
@@ -427,15 +439,8 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
                 self.plot_data = sorted(self.plot_data, key=lambda x: x["z"])
             self.create_spline()
 
-            sign = ""
-            safe = None
-            if self.axis == "X":
-                safe = "Z"
-            if self.axis == "Z":
-                if self.side == "back":
-                    sign = "-"
-                safe = "X"
-            
+            sign, safe = self.safe_retract()
+
             #self._logger.info(self.x_coords)
             #Move to safe position
             gcode = ["G90","G21",f"G0 {safe}{sign}{10+self.clearance:0.4f}"]
