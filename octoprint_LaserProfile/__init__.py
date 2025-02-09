@@ -44,6 +44,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         self.arotate = 0.0
         self.segments = 0
         self.datafolder = None
+        self.increment = 0.5
         #self.watched_path = self._settings.global_get_basefolder("watched")
 
     def initialize(self):
@@ -107,7 +108,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
 
         self.spline = CubicSpline(x_profile, z_profile)
 
-        increment = 0.5 #should this be adjustable?
+        increment = self.increment #should this be adjustable?
         i = min
         while i <= max:
             z_val = self.spline(i)
@@ -268,6 +269,36 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         trans_z = coord["Z"] + depth*math.cos(math.radians(-coord["B"]))
         return trans_x, trans_z
     
+    def lead_calc(self, type, nominal_depth, step, inc, each, first, last):
+        #going to have to figure out what to do if lead in and out overlap
+        depth = nominal_depth
+        self._logger.info(f"type={type}, nd={nominal_depth}, step={step}, inc={inc}, each={each}, first={first}, last={last}")
+        if type == "in":
+            if self.axis == "X" and (each - first <= self.leadin):
+                depth = nominal_depth + inc*step
+                return depth, False, step-1
+            if self.axis == "Z" and abs(each - first) <= self.leadin:
+                if self.side == "front":
+                    depth = nominal_depth + inc*step
+                if self.side == "back":
+                    depth= nominal_depth - inc*step
+                return depth, False, step-1
+            return depth, True, step
+
+        else:  #out 
+            if self.axis == "X" and (last - each <= self.leadout):
+                depth = nominal_depth + inc*step
+                return depth, False, step+1
+            if self.axis == "Z" and abs(each - last) <= self.leadout:
+                if self.side == "front":
+                    depth = nominal_depth + inc*step
+                if self.side == "back":
+                    depth= nominal_depth - inc*step
+                return depth, False, step+1
+            return depth, False, step    
+           
+        
+    
     def generate_flute_job(self):
         self._logger.info("Starting Flute job")
         command_list = []
@@ -289,6 +320,8 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         seg_rot = self.arotate/(len(profile_points)-1)
         self._logger.info(f"Segment rotation: {seg_rot}")
         A_rot = 360/self.segments
+        #for our safe position(s)
+        sign, safe = self.safe_retract()
 
         #Preamble stuff here
         command_list.append("G21")
@@ -300,7 +333,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         safe_position = f"G0 X{trans_x:0.4f} Z{trans_z:0.4f} B{start['B']:0.4f}"
         command_list.append(safe_position)
         command_list.append(f"M3 S24000")
-        
+
         #calculate how many depth passes we need
         pass_info = divmod(self.depth, self.step)
         passes = pass_info[0] #quotient
@@ -310,41 +343,61 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         else:
             total_passes = passes
 
+        #calculate lead-in/out increment, 0.5 can endup being whatever we choose in settings!
+        if self.leadin:
+            total_in_step = int(self.leadin/self.increment)
+            in_inc = self.step/(self.leadin/self.increment)
+              
+        if self.leadout:
+            out_inc = self.step/(self.leadout/self.increment)
+            self._logger.info(f"increment for lead-in: {in_inc}, lead-out {out_inc}") 
         current_pass = 1
         while current_pass <= total_passes:
-            pass_list = []        
+            depth = 0
+            do_next = True
+            pass_list = []
+            out_step = 0
+            in_step = total_in_step        
             #calculate depth on this pass
-            depth = current_pass*self.step*-1
+            nominal_depth = current_pass*self.step*-1
             if current_pass == total_passes and last_pass_depth:
-                depth = self.depth*-1
-            pass_list.append(f"(Cut depth: {depth})")
+                nominal_depth = self.depth*-1
+            
+            pass_list.append(f"(Cut depth: {nominal_depth})")
             i = -1 #handles A rotations better
             for each in profile_points:
-                i+=1 
+                i+=1
+                #Modify Z amounts for lead-in/out, logic may have to change for Z-axis cuts
+                if self.leadin:
+                    depth, do_next, in_step = self.lead_calc("in", nominal_depth, in_step, in_inc, each, profile_points[0], profile_points[-1])
+                    #in_step -= 1
+                if self.leadout and do_next:
+                    depth, do_next, out_step = self.lead_calc("out", nominal_depth, out_step, out_inc, each, profile_points[0], profile_points[-1])
+                    #out_step += 1
+                self._logger.info(f"Depth: {depth}")
                 coord = self.calc_coords(each) #these just follow profile, have to add cut depth
                 #get adjusted values
                 trans_x, trans_z = self.cut_depth_value(coord, depth)
                 pass_list.append(f"G93 G90 G1 X{trans_x:0.3f} Z{trans_z:0.3f} A{seg_rot*i:0.3f} B{coord['B']:0.3f} F{self.feed}")
+                depth = nominal_depth
             #Go to safe position from latest coord
             trans_x, trans_z = self.cut_depth_value(coord, 5)
-            pass_list.append(f"G93 G90 G1 X{trans_x:0.3f} Z{trans_z:0.3f} B{coord['B']:0.3f} F{self.feed}")
+            pass_list.append("(Pass done, move to safe position)")
+            pass_list.append(f"G0 X{trans_x:0.3f} Z{trans_z:0.3f} B{coord['B']:0.3f} F{self.feed}")
             #make sure we move back to last A position before starting next pass
             pass_list.append(f"G0 A{seg_rot*i:0.3f}")
             #move to clear position
-            sign, safe = self.safe_retract()
             pass_list.append(f"G0 {sign}{safe}{self.clearance+10}")
-            #move to start safe position for next pass:
-            pass_list.append(safe_position)    
-        
+
             j = 1
             while j <= self.segments:
                 command_list.append(f"(Starting segment {j} of {self.segments})")
                 command_list.extend(pass_list)
-                #pass_list = pass_list[::-1]
-                #rotate
                 command_list.append("G0 A0") #return A to 0 first
                 command_list.append(f"G0 A{A_rot:0.3f}")
                 command_list.append("G92 A0")
+                #move to start safe position for next pass:
+                command_list.append(safe_position)  
                 j += 1
             current_pass += 1
         command_list.append("M5")
@@ -418,6 +471,8 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             if self.mode == "flute":
                 self.depth = float(data["depth"])
                 self.step = float(data["step"])
+                self.leadin = float(data["leadin"])
+                self.leadout = float(data["leadout"])
                 self.generate_flute_job()
 
 

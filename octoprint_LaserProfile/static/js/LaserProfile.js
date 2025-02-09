@@ -18,6 +18,8 @@ $(function() {
         self.Arot = ko.observable(0);
         self.depth = ko.observable(1);
         self.step = ko.observable(1);
+        self.leadin = ko.observable(0);
+        self.leadout = ko.observable(0);
         self.reversed = false;
         self.isZFile = false;
         self.isXFile = false;
@@ -447,6 +449,8 @@ $(function() {
                 name: self.name,
                 depth: self.depth(),
                 step: self.step(),
+                leadin: self.leadin(),
+                leadout: self.leadout(),
 
             };
     
