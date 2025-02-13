@@ -24,7 +24,9 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
     octoprint.plugin.AssetPlugin,
     octoprint.plugin.StartupPlugin,
     octoprint.plugin.SimpleApiPlugin,
-    octoprint.plugin.TemplatePlugin
+    octoprint.plugin.TemplatePlugin,
+    octoprint.plugin.SettingsPlugin
+
 ):
 
     def __init__(self):

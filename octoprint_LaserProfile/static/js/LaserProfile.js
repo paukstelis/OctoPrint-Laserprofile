@@ -322,6 +322,11 @@ $(function() {
             // Determine the mode based on the file name
             self.isZFile = $("#scan_file_select option:selected").text().startsWith("Z");
             self.isXFile = $("#scan_file_select option:selected").text().startsWith("X");
+            if (!$("#scan_file_select option:selected").text().endsWith("txt")){
+                console.log("Not a txt file");
+                alert("Selected file is not a text scan file.");
+                return
+            }
 
             if (self.isZFile) {
                 $(".zscan").show();
@@ -333,6 +338,7 @@ $(function() {
             self.annotations = [];
             self.vMax = null;
             self.vMin = null;
+            self.target_position = null;
 
             // Send the file info off
             self.createGraph(filePath);
@@ -357,38 +363,6 @@ $(function() {
             }
             //plotProfile();     // Replot with the reversed Z values
         });
-
-        // Handle slider input and update label
-        $("#smoothingSlider").on("input", function() {
-            $("#sliderValue").text($(this).val());
-        });
-
-        // Smoothing function call on button click
-        $("#applySmoothingButton").on("click", function() {
-            var windowSize = parseInt($("#smoothingSlider").val());
-            // Apply Savitzky-Golay smoothing to the Z values
-            self.zValues = savitzkyGolay(self.zValues, windowSize);
-            plotProfile();  // Pass true to indicate we are plotting smoothed data
-        });
-
-        function savitzkyGolay(data, windowSize) {
-            var halfWindow = Math.floor(windowSize / 2);
-            var smoothed = [];
-
-            for (var i = 0; i < data.length; i++) {
-                var start = Math.max(0, i - halfWindow);
-                var end = Math.min(data.length - 1, i + halfWindow);
-                var sum = 0;
-
-                // Simple smoothing by averaging over the window
-                for (var j = start; j <= end; j++) {
-                    sum += data[j];
-                }
-
-                smoothed[i] = sum / (end - start + 1);
-            }
-            return smoothed;
-        }
 
         self.getPointsInRange = function() {
             var pointsInRange = [];
@@ -432,6 +406,11 @@ $(function() {
             //Data sanity checking
             if (self.mode() == "none") {
                 alert("Mode must be set to write a job.");
+                return;
+            }
+
+            if (!self.vMax || !self.vMin) {
+                alert("Min. and Max. values must be set.");
                 return;
             }
 
