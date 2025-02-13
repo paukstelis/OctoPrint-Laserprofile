@@ -430,8 +430,8 @@ $(function() {
 
         self.writeGCode = function() {
             //Data sanity checking
-            if (self.isZFile && self.side == "none") {
-                alert("Tool direction must be set for Z scan jobs.");
+            if (self.mode() == "none") {
+                alert("Mode must be set to write a job.");
                 return;
             }
 
