@@ -207,6 +207,22 @@ $(function() {
                                     ay: -30
                                 });
                                 plotProfile(true);
+
+                            }  else if (self.markerAction() === "targetPoint") {
+                                self.annotations = self.annotations.filter(a => a.text !== 'Target');
+                                self.target_position = clickedZ;
+                                self.annotations.push({
+                                    x: clickedX,
+                                    y: clickedZ,
+                                    xref: 'x',
+                                    yref: 'y',
+                                    text: 'Target',
+                                    showarrow: true,
+                                    arrowhead: 2,
+                                    ax: 20,
+                                    ay: 20
+                                });
+                                plotProfile(true);
                             }
                         } else if (self.isXFile) {
                             // X-file mode: Handle X-axis selections

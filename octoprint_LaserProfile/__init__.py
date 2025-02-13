@@ -188,9 +188,9 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             normdir  = 1
             if self.side == "front":
                 normdir = -1
-            x_center = coord + ((self.tool_length) * math.sin(normdir * normal))
-            z_center = z_value - ((self.tool_length) * math.cos(normal))
-            return_coord = {"X": z_center, "Z": x_center-self.tool_length, "B": b_angle}
+            x_center = coord + ((self.tool_length) * math.cos(normal*normdir))
+            z_center = z_value + ((self.tool_length) * math.sin( normdir*normal))
+            return_coord = {"X": z_center-self.tool_length, "Z": x_center, "B": b_angle}
         return return_coord
     
     def generate_laser_job(self):
@@ -206,7 +206,9 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
                 continue
             profile_points.append(each)
             #TODO: reverse profile points if it is a Z scan
-
+        #reverse the profile for Z axis
+        if self.axis == "Z":
+            profile_points.reverse()
         #A axis rotation per segment- this is very simplistic. Maybe calculate total distance and fraction of that total distace per move?
         seg_rot = self.arotate/(len(profile_points)-1)
         self._logger.info(f"Segment rotation: {seg_rot}")
@@ -344,11 +346,9 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             total_passes = passes
 
         #calculate lead-in/out increment, 0.5 can endup being whatever we choose in settings!
-        if self.leadin:
+        if self.leadin or self.leadout:
             total_in_step = int(self.leadin/self.increment)
             in_inc = self.step/(self.leadin/self.increment)
-              
-        if self.leadout:
             out_inc = self.step/(self.leadout/self.increment)
             self._logger.info(f"increment for lead-in: {in_inc}, lead-out {out_inc}") 
         current_pass = 1
@@ -356,8 +356,9 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             depth = 0
             do_next = True
             pass_list = []
-            out_step = 0
-            in_step = total_in_step        
+            if self.leadin or self.leadout:
+                out_step = 0
+                in_step = total_in_step        
             #calculate depth on this pass
             nominal_depth = current_pass*self.step*-1
             if current_pass == total_passes and last_pass_depth:
@@ -387,7 +388,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             #make sure we move back to last A position before starting next pass
             pass_list.append(f"G0 A{seg_rot*i:0.3f}")
             #move to clear position
-            pass_list.append(f"G0 {sign}{safe}{self.clearance+10}")
+            pass_list.append(f"G0 {safe}{sign}{self.clearance+10:0.3f}")
 
             j = 1
             while j <= self.segments:
