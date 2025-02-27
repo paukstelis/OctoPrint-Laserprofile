@@ -25,7 +25,6 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
     octoprint.plugin.StartupPlugin,
     octoprint.plugin.SimpleApiPlugin,
     octoprint.plugin.TemplatePlugin,
-    octoprint.plugin.SettingsPlugin
 
 ):
 
@@ -47,19 +46,25 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         self.segments = 0
         self.datafolder = None
         self.increment = 0.5
+        self.smooth_points = 4
         #self.watched_path = self._settings.global_get_basefolder("watched")
 
     def initialize(self):
         self.datafolder = self.get_plugin_data_folder()
         self.gcr = G_Code_Rip.G_Code_Rip()
-    ##~~ SettingsPlugin mixin
-
+        self.smooth_points = int(self._settings.get(["smooth_points"]))
+        self.increment  = float(self._settings.get(["increment"]))
+        self.tool_length = float(self._settings.get(["tool_length"]))
     def get_settings_defaults(self):
-        return {
-            # put your plugin's default settings here
-        }
-
-    ##~~ AssetPlugin mixin
+        return dict(
+            increment=0.5,
+            smooth_points=4,
+            tool_length=135,
+            default_segments=1,
+            )
+    def on_settings_save(self, data):
+        octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
+        self.initialize()
 
     def get_assets(self):
         # Define your plugin's asset files to automatically include in the
@@ -141,25 +146,19 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         self.spline = CubicSpline(self.x_coords, self.z_coords)
 
     def calc_coords(self, coord):
-        if coord not in self.x_coords:
-            raise ValueError("Value is not in list")
-        
-        #B angle smoothing, would be nice if there was more control for this
-        slopes = []
-        coord_i = self.x_coords.index(coord)
-        smoothing = 2
-        slopes.append(coord)
-        slopes.extend(self.x_coords[max(0, coord_i-smoothing):coord_i])
-        slopes.extend(self.x_coords[coord_i+1:coord_i+smoothing+1])
-        s=0
-        
-        for each in slopes:
-            s = s + self.spline.derivative()(each)
+       
+        closest = min(self.x_coords, key=lambda x: abs(x - coord))
+        closest_idx = self.x_coords.index(closest)
+        half_window = self.smooth_points // 2
+        start_idx = max(0, closest_idx - half_window)
+        end_idx = min(len(self.x_coords), closest_idx + half_window + 1)
+        near = self.x_coords[start_idx:end_idx]
+        slopes = [self.spline.derivative()(x) for x in near]
+        #include the calculated value in the average
+        slopes.append(self.spline.derivative()(coord))
+        slope = sum(slopes) / len(slopes)
         z_value = self.spline(coord)
-        
-        #Average of slope
-        slope = s/len(slopes)
-        
+
         #normal angle calculation
         if self.axis == "X":
             normal = math.atan2(slope, 1)
@@ -219,8 +218,22 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         #Preamble stuff here
         command_list.append("G21")
         command_list.append("G90")
+        
+        #for our safe position(s)
+        sign, safe = self.safe_retract()
+
         #move to start
         start = self.calc_coords(profile_points[0])
+        command_list.append(f"G0 {safe}{sign}{self.clearance+10:0.3f}")
+        move_1 = f"G0 X{start['X']:0.4f}"
+        move_2 = f"G0 Z{start['Z']:0.4f} B{start['B']:0.4f}"
+        if self.axis == "X":
+            command_list.append(move_1)
+            command_list.append(move_2)
+        else:
+            command_list.append(move_2)
+            command_list.append(move_1)
+
         command_list.append(f"G0 X{start['X']:0.4f} Z{start['Z']:0.4f} A0 B{start['B']:0.4f}")
         if self.test:
             command_list.append("M4 S5")
@@ -261,7 +274,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         #self._logger.info(command_list)
         #output_name = "LASERtest.gcode"
         output_name = self.name.removesuffix(".txt")
-        output_name = f"L_S{self.segments}_P{self.power}_"+output_name+".gcode"
+        output_name = f"Laser_S{self.segments}_P{self.power}_"+output_name+".gcode"
         path_on_disk = "{}/{}".format(self._settings.getBaseFolder("watched"), output_name)
 
         with open(path_on_disk,"w") as newfile:
@@ -301,8 +314,6 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
                 return depth, False, step+1
             return depth, False, step    
            
-        
-    
     def generate_flute_job(self):
         self._logger.info("Starting Flute job")
         command_list = []
@@ -335,6 +346,15 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         trans_x, trans_z = self.cut_depth_value(start, 5)
         self._logger.info(f"Start coords: X{start['X']}, Z{start['Z']}. Modified X{trans_x}, Z{trans_z}")
         safe_position = f"G0 X{trans_x:0.4f} Z{trans_z:0.4f} B{start['B']:0.4f}"
+        command_list.append(f"G0 {safe}{sign}{self.clearance+10:0.3f}")
+        move_1 = f"G0 X{trans_x:0.4f}"
+        move_2 = f"G0 Z{trans_z:0.4f} B{start['B']:0.4f}"
+        if self.axis == "X":
+            command_list.append(move_1)
+            command_list.append(move_2)
+        else:
+            command_list.append(move_2)
+            command_list.append(move_1)
         command_list.append(safe_position)
         command_list.append(f"M3 S24000")
 
@@ -406,11 +426,55 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         command_list.append("M5")
         command_list.append("M30")
         output_name = self.name.removesuffix(".txt")
-        output_name = f"Flute_S{self.segments}_R{self.arotate}"+output_name+".gcode"
+        output_name = f"Flute_S{self.segments}_Arot{self.arotate}"+output_name+".gcode"
         path_on_disk = "{}/{}".format(self._settings.getBaseFolder("watched"), output_name)
 
         with open(path_on_disk,"w") as newfile:
             for line in command_list:
+                newfile.write(f"\n{line}")
+
+    def generate_wrap_job(self):
+        #create profile from diameter reference
+        profile = []
+        for each in self.plot_data:
+            x = float(each["x"])
+            z = float(each["z"])
+            coord = [x,z]
+            profile.append(coord)
+        self._logger.info(profile)
+        gcr = G_Code_Rip.G_Code_Rip()
+        basefolder = self._settings.getBaseFolder("uploads")
+        gcr.Read_G_Code(f"{basefolder}/{self.selected_file}", XYarc2line=True, units="mm")
+        output_name = "aname"
+        output_path = output_name+self.template_name
+        path_on_disk = "{}/{}".format(self._settings.getBaseFolder("watched"), output_path)
+        #calculate scalefactor
+        profile_dist = self.vMax - self.vMin
+        path_sf = profile_dist/self.width
+        self._logger.info(f"Profile distance: {profile_dist}, Scale factor: {path_sf}")
+        #have to go back and handle z cases too
+        temp,minx,maxx,miny,maxy,minz,maxz  = gcr.scale_rotate_code(gcr.g_code_data,
+                                                                    [path_sf,1,1,1],
+                                                                    0,
+                                                                    split_moves=True,
+                                                                    min_seg_length=0.4)
+        #self._logger.info(temp)
+        midx = (minx+maxx)/2
+        midy = (miny+maxy)/2
+        self._logger.info(self.plot_data)
+        self._logger.info(f"midx: {midx}")
+        #calculate offset, just x for now
+        #xoffset = (self.vMax+self.vMin)/2 + self.vMin
+        xoffset = abs(minx) + self.vMin
+        self._logger.info(f"X offset: {xoffset}")
+        temp = gcr.scale_translate(temp,translate=[-xoffset,0,0.0])
+        temp = gcr.profile_conform(temp,profile,self.min_B,self.max_B,self.tool_length,self.diam/2)
+        #self._logger.info(temp)
+        output_name = "wraptest.gcode"
+        path_on_disk = "{}/{}".format(self._settings.getBaseFolder("watched"), output_name)
+        
+        with open(path_on_disk,"w") as newfile:
+            for line in gcr.generategcode(temp,Rstock=self.diam/2,no_variables=True,Wrap="SPECIAL",FSCALE="None"):
                 newfile.write(f"\n{line}")
 
     def safe_retract(self):
@@ -503,9 +567,14 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             #Move to safe position
             gcode = ["G90","G21",f"G0 {safe}{sign}{10+self.clearance:0.4f}"]
             coord = self.calc_coords(self.target)
-            gcode.append(f"G93 G90 G1 X{coord['X']:0.4f} F200")
-            gcode.append(f"G93 G90 G1 Z{coord['Z']:0.4f} B{coord['B']:0.4f} F200")
-
+            move_1 = (f"G93 G90 G1 X{coord['X']:0.4f} F200")
+            move_2 = (f"G93 G90 G1 Z{coord['Z']:0.4f} B{coord['B']:0.4f} F200")
+            if self.axis == "X":
+                gcode.append(move_1)
+                gcode.append(move_2)
+            else:
+                gcode.append(move_2)
+                gcode.append(move_1)
             self._logger.info(gcode)
             self._printer.commands(gcode)
 

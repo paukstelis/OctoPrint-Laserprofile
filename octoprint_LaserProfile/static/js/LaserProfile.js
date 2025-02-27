@@ -1,6 +1,7 @@
 $(function() {
     function LaserprofileViewModel(parameters) {
         var self = this;
+        self.global_settings = parameters[1];
         self.xValues = [];
         self.zValues = [];
         self.vMax = null;
@@ -20,6 +21,8 @@ $(function() {
         self.step = ko.observable(1);
         self.leadin = ko.observable(0);
         self.leadout = ko.observable(0);
+        self.smooth_points = ko.observable(4);
+        self.increment = ko.observable(0.5);
         self.reversed = false;
         self.isZFile = false;
         self.isXFile = false;
@@ -105,10 +108,17 @@ $(function() {
         }
 
         self.onBeforeBinding = function () {
+            self.settings = self.global_settings.settings.plugins.LaserProfile;
+            //console.log(self.global_settings);
             self.fetchProfileFiles();
             $(".laser").hide();
             $(".wrap").hide();
             $(".zscan").hide();
+
+            self.smooth_points = self.settings.smooth_points;
+            self.tool_length = self.settings.tool_length;
+            self.increment = self.settings.increment;
+
         };
 
         // Bind mode change event
@@ -503,6 +513,6 @@ $(function() {
     OCTOPRINT_VIEWMODELS.push({
         construct: LaserprofileViewModel,
         dependencies: ["loginStateViewModel", "settingsViewModel"],
-        elements: ["#tab_plugin_LaserProfile"]
+        elements: ["#tab_plugin_LaserProfile","#settings_plugin_LaserProfile"]
     });
 });
