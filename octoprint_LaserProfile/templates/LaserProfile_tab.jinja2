@@ -85,6 +85,13 @@
             <input id="test" type="checkbox" checked data-bind="checked: test">
             </label>
         </div>
+
+        <div class="wrap">
+            <label for="ra">Adjust radius:
+            <input id="ra" type="checkbox" checked data-bind="checked: radius_adjust">
+            </label>
+        </div>
+
     </div>
 
     <div style="margin-left: 310px;">
@@ -92,7 +99,6 @@
             <label>Marker Selection:</label>
             <select id="markerSelector" data-bind="value: markerAction">
                 <option value="zeroPoint">Set Zero</option>
-                <option class="wrap" value="wrapzero">Gcode Zero</option>
                 <option class="wrap" value="refset">Diameter Reference</option>
                 <option value="Max">Set Max Limit</option>
                 <option value="Min">Set Min Limit</option>

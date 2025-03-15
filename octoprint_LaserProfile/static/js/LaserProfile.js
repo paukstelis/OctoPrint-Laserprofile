@@ -41,8 +41,9 @@ $(function() {
         self.refdiam = ko.observable(0);
         self.refset = null;
         self.referenceZ = null;
-        self.width = 0;
+        self.width = ko.observable(0);
         self.selectedGCodeFile = null;
+        self.radius_adjust = ko.observable(0);
 
         self.mode = ko.observable("none");
         
@@ -180,7 +181,7 @@ $(function() {
                         } else if (self.isZFile) {
                             // Z-file mode: Handle Z-axis selections
                             if (self.markerAction() === "Max") {
-                                self.annotations = self.annotations.filter(a => a.text !== 'Max');
+                                self.annotations = self.annotations.filter(a => !a.text.startsWith('Max'));
                                 if (self.vMin && clickedZ < self.vMin) {
                                     alert("Max must be greater than Min");
                                     return;
@@ -191,7 +192,7 @@ $(function() {
                                     y: clickedZ,
                                     xref: 'x',
                                     yref: 'y',
-                                    text: 'Max',
+                                    text: 'Max: '+self.vMax,
                                     showarrow: true,
                                     arrowhead: 2,
                                     ax: 30,
@@ -199,7 +200,7 @@ $(function() {
                                 });
                                 plotProfile(true);
                             } else if (self.markerAction() === "Min") {
-                                self.annotations = self.annotations.filter(a => a.text !== 'Min');
+                                self.annotations = self.annotations.filter(a => !a.text.startsWith('Min'));
                                 if (self.vMax && clickedZ > self.vMax) {
                                     alert("Min must be less than Max");
                                     return;
@@ -210,7 +211,7 @@ $(function() {
                                     y: clickedZ,
                                     xref: 'x',
                                     yref: 'y',
-                                    text: 'Min',
+                                    text: 'Min: '+self.vMin,
                                     showarrow: true,
                                     arrowhead: 2,
                                     ax: -30,
@@ -219,14 +220,14 @@ $(function() {
                                 plotProfile(true);
 
                             }  else if (self.markerAction() === "targetPoint") {
-                                self.annotations = self.annotations.filter(a => a.text !== 'Target');
+                                self.annotations = self.annotations.filter(a => !a.text.startsWith('Target'));
                                 self.target_position = clickedZ;
                                 self.annotations.push({
                                     x: clickedX,
                                     y: clickedZ,
                                     xref: 'x',
                                     yref: 'y',
-                                    text: 'Target',
+                                    text: 'Target: '+self.target_position,
                                     showarrow: true,
                                     arrowhead: 2,
                                     ax: 20,
@@ -237,7 +238,7 @@ $(function() {
                         } else if (self.isXFile) {
                             // X-file mode: Handle X-axis selections
                             if (self.markerAction() === "Max") {
-                                self.annotations = self.annotations.filter(a => a.text !== 'Max');
+                                self.annotations = self.annotations.filter(a => !a.text.startsWith('Max'));
                                 if (self.vMin && clickedX < self.vMin) {
                                     alert("Max must be greater than Min");
                                     return;
@@ -248,7 +249,7 @@ $(function() {
                                     y: clickedZ,
                                     xref: 'x',
                                     yref: 'y',
-                                    text: 'Max',
+                                    text: 'Max: '+self.vMax,
                                     showarrow: true,
                                     arrowhead: 2,
                                     ax: 30,
@@ -256,7 +257,7 @@ $(function() {
                                 });
                                 plotProfile(false);
                             } else if (self.markerAction() === "Min") {
-                                self.annotations = self.annotations.filter(a => a.text !== 'Min');
+                                self.annotations = self.annotations.filter(a => !a.text.startsWith('Min'));
                                 if (self.vMax && clickedX > self.vMax) {
                                     alert("Min must be less than Max");
                                     return;
@@ -267,7 +268,7 @@ $(function() {
                                     y: clickedZ,
                                     xref: 'x',
                                     yref: 'y',
-                                    text: 'Min',
+                                    text: 'Min: '+self.vMin,
                                     showarrow: true,
                                     arrowhead: 2,
                                     ax: -30,
@@ -275,14 +276,14 @@ $(function() {
                                 });
                                 plotProfile(false);
                             } else if (self.markerAction() === "targetPoint") {
-                                self.annotations = self.annotations.filter(a => a.text !== 'Target');
+                                self.annotations = self.annotations.filter(a => !a.text.startsWith('Target'));
                                 self.target_position = clickedX;
                                 self.annotations.push({
                                     x: clickedX,
                                     y: clickedZ,
                                     xref: 'x',
                                     yref: 'y',
-                                    text: 'Target',
+                                    text: 'Target: '+self.target_position,
                                     showarrow: true,
                                     arrowhead: 2,
                                     ax: 20,
@@ -292,7 +293,7 @@ $(function() {
                             }
                             
                             else if (self.markerAction() === "refset") {
-                                self.annotations = self.annotations.filter(a => a.text.startsWith('D'));
+                                self.annotations = self.annotations.filter(a => !a.text.startsWith('D'));
                                 self.referenceZ = clickedZ;
                                 self.annotations.push({
                                     x: clickedX,
@@ -456,6 +457,8 @@ $(function() {
                 step: self.step(),
                 leadin: self.leadin(),
                 leadout: self.leadout(),
+                width: self.width,
+                radius_adjust: self.radius_adjust(),
 
             };
     

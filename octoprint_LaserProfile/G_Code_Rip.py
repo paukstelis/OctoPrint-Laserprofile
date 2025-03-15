@@ -1150,32 +1150,70 @@ class G_Code_Rip:
         return out,minx,maxx,miny,maxy,minz,maxz
 
     #######################################
-    def coordinate_modification(self, coord, spline, radius, minB, maxB, tool):
+    def coordinate_modification(self,coord):
         import math
-        z_value = spline(coord[0])
-        z_mod = coord[1] + z_value
-        radius_at_z = radius+z_mod
-        slope = spline.derivative()(coord[0])
-        tangent_angle = atan(slope)
-        b_angle = math.degrees(tangent_angle)
-        if b_angle > 0 and b_angle > maxB:
-            b_angle = maxB
-        if b_angle < 0 and b_angle < minB:
-            b_angle = minB
-        tangent_angle = math.radians(b_angle)
-        normal_angle = tangent_angle + math.pi / 2
-        x_center = coord[0] + (tool) * math.cos(normal_angle)
-        z_center = z_mod + (tool) * math.sin(normal_angle)
-        return [x_center,coord[1],z_center-tool,b_angle,radius_at_z]
-        #return X,Z,B,radius
+        self.axis = "X"
+        self.smooth_points = 2
+        closest = min(self.x_coords, key=lambda x: abs(x - coord[0]))
+        closest_idx = self.x_coords.index(closest)
+        half_window = self.smooth_points // 2
+        start_idx = max(0, closest_idx - half_window)
+        end_idx = min(len(self.x_coords), closest_idx + half_window + 1)
+        near = self.x_coords[start_idx:end_idx]
+        slopes = [self.spline.derivative()(x) for x in near]
+        #include the calculated value in the average
+        slopes.append(self.spline.derivative()(coord[0]))
+        slope = sum(slopes) / len(slopes)
+        z_value = self.spline(coord[0])
 
-                
-    def profile_conform(self,code2conform,profile,minB,maxB,tool,radius):
-        #bring profile in as list [X,Z,RADIUS]
-        from scipy.interpolate import CubicSpline
-        profile = sorted(profile)
-        x_profile, z_profile = zip(*profile)
-        spline = CubicSpline(x_profile, z_profile)
+        #normal angle calculation
+        if self.axis == "X":
+            normal = math.atan2(slope, 1)
+        if self.axis == "Z" and self.side == "back":
+            normal = math.atan2(1/abs(slope), 1)
+        if self.axis == "Z" and self.side == "front":
+            normal = math.atan2(1/abs(slope),1) - math.pi
+        
+        b_angle = math.degrees(normal)
+        
+        #adjust normal angle if beyond limits
+        if b_angle > 0 and b_angle > self.max_B:
+            b_angle = self.max_B
+        if b_angle < 0 and b_angle < self.min_B:
+            b_angle = self.min_B
+        #recalculate normal in case it is outside B range
+        normal = math.radians(b_angle)
+        
+        #self._logger.info(f"Normal angle: {normal}, slope: {slope},  B angle: {b_angle}")
+        
+        if self.axis == "X":
+            normal = normal + math.pi / 2
+            depth = coord[2] #Z-depth
+            x_center = coord[0] + ((self.tool_length) * math.cos(normal))
+            z_center = z_value + ((self.tool_length) * math.sin(normal))
+            x_center = x_center + depth*math.sin(math.radians(-b_angle))
+            z_center = z_center + depth*math.cos(math.radians(-b_angle))
+            radius_at_z = self.radius
+            if self.radius_adjust:
+                z_diff = abs(self.refZ - z_value)
+                if z_value < self.refZ:
+                    radius_at_z = self.radius - z_diff
+                else:
+                    radius_at_z = self.radius + z_diff
+
+            #return_coord = {"X": x_center, "Z": z_center-self.tool_length, "B": b_angle}
+            return [x_center,coord[1],z_center-self.tool_length,b_angle,radius_at_z]
+                     
+    def profile_conform(self,code2conform,spline,x_coords,minB,maxB,tool,radius,radius_adjust,referenceZ):
+
+        self.spline = spline
+        self.x_coords = x_coords
+        self.min_B = minB
+        self.max_B = maxB
+        self.tool_length = tool
+        self.radius = radius
+        self.radius_adjust = radius_adjust
+        self.refZ = referenceZ
 
         mvtype = -1  # G0 (Rapid), G1 (linear), G2 (clockwise arc) or G3 (counterclockwise arc).
         passthru = ""
@@ -1212,8 +1250,8 @@ class G_Code_Rip:
 
             ###############################################################################
             if mvtype >= 0 and mvtype <=3:
-                pos = self.coordinate_modification(POS, spline, radius, minB, maxB, tool)
-                pos_last = self.coordinate_modification(POS_LAST,spline, radius, minB, maxB, tool)
+                pos = self.coordinate_modification(POS)
+                pos_last = self.coordinate_modification(POS_LAST)
                 if mvtype == 0:
                     out.append( [mvtype,pos_last,pos] )
                 
@@ -1714,9 +1752,9 @@ class G_Code_Rip:
                 
                 if Wrap == "SPECIAL":
                     if (not isinstance(line[1][1], complex)):
-                        coordA[1]=sign*degrees(line[1][1]/coordA[-1])
+                        coordA[1]=sign*degrees(line[1][1]/line[1][-1]) #coordA[-1] is radius
                     if (not isinstance(line[2][1], complex)):
-                        coordB[1]=sign*degrees(line[2][1]/coordB[-1])
+                        coordB[1]=sign*degrees(line[2][1]/line[2][-1])
 
                 dx = coordA[0]-LASTX
                 dy = coordA[1]-LASTY
