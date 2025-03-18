@@ -1153,7 +1153,7 @@ class G_Code_Rip:
     def coordinate_modification(self,coord):
         import math
         self.axis = "X"
-        self.smooth_points = 2
+        self.smooth_points = 6
         closest = min(self.x_coords, key=lambda x: abs(x - coord[0]))
         closest_idx = self.x_coords.index(closest)
         half_window = self.smooth_points // 2

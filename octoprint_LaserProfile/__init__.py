@@ -321,7 +321,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         #returns the X coordinate in our profile point that will give the arc of the length, distance
         x_ref = profile_points[0] if start else profile_points[-1]
         def arc_length(x_target, x_ref):
-            integral, _ = quad(lambda x: (1 + self.spline.derivative()(x) ** 2) ** 0.5, x_ref, x_target)
+            integral, _ = quad(lambda x: (1 + self.spline.derivative()(x) ** 2) ** 0.5, x_ref, x_target,limit=500)
             return integral
         def root_func(x):
             return arc_length(x, x_ref) - distance
@@ -478,27 +478,31 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         #gcr = G_Code_Rip.G_Code_Rip()
         basefolder = self._settings.getBaseFolder("uploads")
         self.gcr.Read_G_Code(f"{basefolder}/{self.selected_file}", XYarc2line=True, units="mm")
-        output_name = "aname"
-        output_path = output_name+self.name
-        path_on_disk = "{}/{}".format(self._settings.getBaseFolder("watched"), output_path)
+        #profile name
+        profile_name = self.name.removesuffix(".txt")
+        gcode_name = self.selected_file.removesuffix(".gcode")
+        output_name = f"Wrap_{profile_name}.gcode"
         #calculate scalefactor
         spline_derivative = self.spline.derivative()
         def arc_length(x):
             return (1 + spline_derivative(x) ** 2) ** 0.5
+        profile_dist, _ = quad(arc_length, self.vMin, self.vMax, limit=500)
+        sf = profile_dist/self.width
+        new_width = self.width*sf
+        self._logger.info(f"Profile distance: {profile_dist}, Scale factors: {sf}, New width:{new_width}")
+        #now get the X position that will correspond to that length along thearc
+        target_x = self.x_to_arc(profile_points, new_width, start=True)
         
-        #profile_dist = abs(self.vMax - self.vMin) #may need abs this, for reversed profiles?
-        profile_dist = quad(arc_length, self.vMin, self.vMax, limit=500)
-        x_sf = 1
-        y_sf = profile_dist/self.width
-        if y_sf < 1:
-            x_sf = y_sf
-        self._logger.info(f"Profile distance: {profile_dist}, Scale factors: {y_sf}")
+        a = target_x-self.vMin
+
+        xtoscale = (a)/self.width
+        self._logger.info(f"Target X-value={target_x}, xtoscale={xtoscale}")
         #have to go back and handle z cases too
         temp,minx,maxx,miny,maxy,minz,maxz  = self.gcr.scale_rotate_code(self.gcr.g_code_data,
-                                                                    [x_sf,y_sf,1,1],
+                                                                    [xtoscale,sf,1,1],
                                                                     0,
                                                                     split_moves=True,
-                                                                    min_seg_length=1)
+                                                                    min_seg_length=0.25)
         #self._logger.info(temp)
         midx = (minx+maxx)/2
         midy = (miny+maxy)/2
@@ -521,10 +525,12 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
                                         self.radius_adjust,
                                         self.referenceZ)
         #self._logger.info(temp)
-        output_name = "wraptest.gcode"
         path_on_disk = "{}/{}".format(self._settings.getBaseFolder("watched"), output_name)
         
         with open(path_on_disk,"w") as newfile:
+            newfile.write(f"(LatheEngraver G-code Wrapping)\n")
+            newfile.write(f"(Ref. Diam: {self.diam}, Radius adjust: {self.radius_adjust}, G-code width: {self.width})\n")
+            newfile.write(f"(Profile distance: {profile_dist:0.2f}, X-scale factor: {xtoscale}, A-scale factor: {sf})\n")
             for line in self.gcr.generategcode(temp,Rstock=self.diam/2,no_variables=True,Wrap="SPECIAL",FSCALE="None"):
                 newfile.write(f"\n{line}")
 
@@ -595,7 +601,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             
             if self.mode == "wrap":
                 self.referenceZ = float(data["refZ"])
-                self.width = float(data["width"])
+                self.width = float(data["width"]) #width in X as reported by bgs
                 self.selected_file = data["filename"]["path"]
                 self.diam = float(data["diam"])
                 self.radius_adjust = bool(data["radius_adjust"])
