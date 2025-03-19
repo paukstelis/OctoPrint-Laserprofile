@@ -463,6 +463,14 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             for line in command_list:
                 newfile.write(f"\n{line}")
 
+    def arc_length(self, x):
+        spline_derivative = self.spline.derivative()
+        return (1 + spline_derivative(x) ** 2) ** 0.5
+    
+    def get_arc(self, x1, x2):
+        profile_dist, _ = quad(self.arc_length, x1, x2, limit=500)
+        return profile_dist
+
     def generate_wrap_job(self):
         #create profile from diameter reference
         profile_points = []
@@ -479,14 +487,15 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         basefolder = self._settings.getBaseFolder("uploads")
         self.gcr.Read_G_Code(f"{basefolder}/{self.selected_file}", XYarc2line=True, units="mm")
         #profile name
+        self._logger.info(self.gcr.g_code_data)
+        #make the first move a safe X,Z move
+
         profile_name = self.name.removesuffix(".txt")
         gcode_name = self.selected_file.removesuffix(".gcode")
         output_name = f"Wrap_{profile_name}.gcode"
         #calculate scalefactor
-        spline_derivative = self.spline.derivative()
-        def arc_length(x):
-            return (1 + spline_derivative(x) ** 2) ** 0.5
-        profile_dist, _ = quad(arc_length, self.vMin, self.vMax, limit=500)
+        profile_dist = self.get_arc(self.vMin, self.vMax)
+        #profile_dist, _ = quad(self.arc_length, self.vMin, self.vMax, limit=500)
         sf = profile_dist/self.width
         new_width = self.width*sf
         self._logger.info(f"Profile distance: {profile_dist}, Scale factors: {sf}, New width:{new_width}")
@@ -513,7 +522,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         xoffset = abs(minx) + self.vMin
         self._logger.info(f"X offset: {xoffset}")
         temp = self.gcr.scale_translate(temp,translate=[-xoffset,0,0.0])
-        self._logger.info(temp)
+        
         
         temp = self.gcr.profile_conform(temp,
                                         self.spline,
@@ -524,15 +533,44 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
                                         self.diam/2,
                                         self.radius_adjust,
                                         self.referenceZ)
-        #self._logger.info(temp)
+        self._logger.info(temp)
+        #get first X and Z moves that are not complex
+        first_x = None
+        first_z = None
+        for line in temp:
+            if line[0] == 0 or line[0] == 1:
+                if not isinstance(line[1][3], complex):
+                    first_z = line[1][2]
+                if not isinstance(line[1][1], complex):
+                    first_x = line[1][0]
+                    break
+
+
         path_on_disk = "{}/{}".format(self._settings.getBaseFolder("watched"), output_name)
-        
+        if self.segments > 1:
+            arots = 360/self.segments
+        repeats = self.segments
         with open(path_on_disk,"w") as newfile:
             newfile.write(f"(LatheEngraver G-code Wrapping)\n")
             newfile.write(f"(Ref. Diam: {self.diam}, Radius adjust: {self.radius_adjust}, G-code width: {self.width})\n")
             newfile.write(f"(Profile distance: {profile_dist:0.2f}, X-scale factor: {xtoscale}, A-scale factor: {sf})\n")
-            for line in self.gcr.generategcode(temp,Rstock=self.diam/2,no_variables=True,Wrap="SPECIAL",FSCALE="None"):
-                newfile.write(f"\n{line}")
+            newfile.write("(Safe moves added)\n")
+            newfile.write(f"G90 G21\n")
+            newfile.write(f"G0 Z10\n")
+            newfile.write(f"G0 X{first_x:0.2f}\n")
+            #single case
+            while repeats:
+                for line in self.gcr.generategcode(temp,Rstock=self.diam/2,no_variables=True,Wrap="SPECIAL",FSCALE="None"):
+                    if repeats > 1 and line.startswith("M30"):
+                        continue
+                    else:
+                        newfile.write(f"\n{line}")
+                repeats -= 1
+                if repeats:
+                    newfile.write("\nG0 A0")
+                    newfile.write(f"\nG0 A{arots:0.4f}")
+                    newfile.write("\nG92 A0")
+            
 
     def safe_retract(self):
         sign = ""
@@ -550,6 +588,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             write_job=[],
             go_to_position=[],
             creategraph=[],
+            get_arc_length=[],
         )
     
     def on_api_command(self, command, data):
@@ -570,6 +609,8 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             self.name = data["name"]
             self.arotate = float(data["arotate"])
             self.segments = int(data["segments"])
+            if self.segments == 0:
+                self.segments = 1
             self.vMax = float(data["vMax"])
             self.vMin = float(data["vMin"])
             self.feed = int(data["feed"])
@@ -606,7 +647,15 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
                 self.diam = float(data["diam"])
                 self.radius_adjust = bool(data["radius_adjust"])
                 self.generate_wrap_job()
-
+        
+        if command == "get_arc_length":
+            self.vMax = float(data["vMax"])
+            self.vMin = float(data["vMin"])
+            profile_distance = self.get_arc(self.vMin, self.vMax)
+            self._logger.info(f"Profile distance: {profile_distance}")
+            data = dict(type="distance", pd=f"{profile_distance:0.2f}")
+            self._plugin_manager.send_plugin_message('LaserProfile', data)
+            
         if command == "go_to_position":
             self.plot_data = data["plot_data"]
             self.target = float(data["target"])

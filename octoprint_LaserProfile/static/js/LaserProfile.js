@@ -27,6 +27,7 @@ $(function() {
         self.isZFile = false;
         self.isXFile = false;
         self.name = null;
+        self.pd = null;
 
         self.wrapfiles = null;
         self.scans = null;
@@ -35,7 +36,7 @@ $(function() {
         self.power = ko.observable(250);
         self.feed = ko.observable(200);
         self.test = ko.observable(0);
-        self.segments = ko.observable(10);
+        self.segments = ko.observable(1);
         //Fluting/wrapping
         self.scale = false;
         self.refdiam = ko.observable(0);
@@ -126,10 +127,18 @@ $(function() {
         $("#modeSelect").on("change", function () {
             self.mode($(this).val());
             self.onModeChange();
+            console.log(self.mode());
         });
 
+        self.do_distance = function() {
+            if (!self.isZFile && self.mode() === "wrap" && self.vMax && self.vMin)  {
+                self.pd = self.get_pd();
+                return true;
+            }
+        }
         // Function to plot the profile using Plotly
         function plotProfile(isZFile) {
+
             var trace = {
                 x: self.xValues,
                 y: self.zValues,
@@ -255,7 +264,7 @@ $(function() {
                                     ax: 30,
                                     ay: -30
                                 });
-                                plotProfile(false);
+                                if (!self.do_distance()) { plotProfile(false); }
                             } else if (self.markerAction() === "Min") {
                                 self.annotations = self.annotations.filter(a => !a.text.startsWith('Min'));
                                 if (self.vMax && clickedX > self.vMax) {
@@ -274,7 +283,7 @@ $(function() {
                                     ax: -30,
                                     ay: -30
                                 });
-                                plotProfile(false);
+                                if (!self.do_distance()) { plotProfile(false); }
                             } else if (self.markerAction() === "targetPoint") {
                                 self.annotations = self.annotations.filter(a => !a.text.startsWith('Target'));
                                 self.target_position = clickedX;
@@ -291,7 +300,6 @@ $(function() {
                                 });
                                 plotProfile(false);
                             }
-                            
                             else if (self.markerAction() === "refset") {
                                 self.annotations = self.annotations.filter(a => !a.text.startsWith('D'));
                                 self.referenceZ = clickedZ;
@@ -395,6 +403,21 @@ $(function() {
                 self.zValues = data.probe.map(point => point[0]);
                 plotProfile(self.isZFile);
             }
+
+            if (plugin == 'LaserProfile' && data.type == 'distance') {
+                self.pd = data.pd;
+                self.annotations = self.annotations.filter(a => !a.text.startsWith('Width'));
+                self.annotations.push({
+                    x: 0,
+                    y: 1,
+                    xref: 'paper',
+                    yref: 'paper',
+                    text: 'Width: '+self.width+'<br>Pro. Dist.: '+self.pd,
+                    showarrow: false,
+                });
+                console.log(self.pd);
+                plotProfile(self.isZFile);
+            }
         }
 
         //transmit the file path. It will be procesed and data sent back
@@ -409,6 +432,22 @@ $(function() {
                 })
                 .fail(function() {
                     console.error("Graph info not transmitted");
+                });
+
+        };
+
+        self.get_pd = function() {
+            var data = {
+                vMin: self.vMin,
+                vMax: self.vMax
+            };
+
+            OctoPrint.simpleApiCommand("LaserProfile", "get_arc_length", data)
+                .done(function(response) {
+                    console.log("Info for arc length sent");
+                })
+                .fail(function() {
+                    console.error("Did not get arc length");
                 });
 
         };
