@@ -511,7 +511,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
                                                                     [xtoscale,sf,1,1],
                                                                     0,
                                                                     split_moves=True,
-                                                                    min_seg_length=0.25)
+                                                                    min_seg_length=1.0)
         #self._logger.info(temp)
         midx = (minx+maxx)/2
         midy = (miny+maxy)/2

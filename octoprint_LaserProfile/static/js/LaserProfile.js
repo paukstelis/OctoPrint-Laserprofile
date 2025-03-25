@@ -436,6 +436,7 @@ $(function() {
 
         };
 
+        
         self.get_pd = function() {
             var data = {
                 vMin: self.vMin,
