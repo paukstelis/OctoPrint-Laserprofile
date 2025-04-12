@@ -14,7 +14,8 @@ $(function() {
         self.min_B = ko.observable(-180);
         self.max_B = ko.observable(180);
         self.start_max = ko.observable(0);
-        self.x_steps = ko.observable(1.0);
+        self.steps = ko.observable(1.0);
+        self.smoothing = ko.observable(6);
         self.side = ko.observable("front");
         self.Arot = ko.observable(0);
         self.depth = ko.observable(1);
@@ -45,6 +46,7 @@ $(function() {
         self.width = ko.observable(0);
         self.selectedGCodeFile = null;
         self.radius_adjust = ko.observable(0);
+        self.singleB = ko.observable(0);
 
         self.mode = ko.observable("none");
         
@@ -436,7 +438,7 @@ $(function() {
 
         };
 
-        
+
         self.get_pd = function() {
             var data = {
                 vMin: self.vMin,
@@ -499,6 +501,9 @@ $(function() {
                 leadout: self.leadout(),
                 width: self.width,
                 radius_adjust: self.radius_adjust(),
+                singleB: self.singleB(),
+                steps: self.steps(),
+                smoothing: self.smoothing(),
 
             };
     

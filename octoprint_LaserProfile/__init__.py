@@ -50,6 +50,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
         self.increment = 0.5
         self.smooth_points = 4
         self.weak_laser = 0
+        self.singleB = False
         #self.watched_path = self._settings.global_get_basefolder("watched")
 
     def initialize(self):
@@ -511,7 +512,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
                                                                     [xtoscale,sf,1,1],
                                                                     0,
                                                                     split_moves=True,
-                                                                    min_seg_length=1.0)
+                                                                    min_seg_length=self.steps)
         #self._logger.info(temp)
         midx = (minx+maxx)/2
         midy = (miny+maxy)/2
@@ -532,7 +533,9 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
                                         self.tool_length,
                                         self.diam/2,
                                         self.radius_adjust,
-                                        self.referenceZ)
+                                        self.referenceZ,
+                                        self.singleB,
+                                        self.smoothing)
         self._logger.info(temp)
         #get first X and Z moves that are not complex
         first_x = None
@@ -609,6 +612,8 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
             self.name = data["name"]
             self.arotate = float(data["arotate"])
             self.segments = int(data["segments"])
+            self.steps = float(data["steps"])
+            self.smoothing = float(data["smoothing"])
             if self.segments == 0:
                 self.segments = 1
             self.vMax = float(data["vMax"])
@@ -646,6 +651,7 @@ class LaserprofilePlugin(octoprint.plugin.SettingsPlugin,
                 self.selected_file = data["filename"]["path"]
                 self.diam = float(data["diam"])
                 self.radius_adjust = bool(data["radius_adjust"])
+                self.singleB = bool(data["singleB"])
                 self.generate_wrap_job()
         
         if command == "get_arc_length":

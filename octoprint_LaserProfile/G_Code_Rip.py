@@ -1153,7 +1153,6 @@ class G_Code_Rip:
     def coordinate_modification(self,coord):
         import math
         self.axis = "X"
-        self.smooth_points = 6
         closest = min(self.x_coords, key=lambda x: abs(x - coord[0]))
         closest_idx = self.x_coords.index(closest)
         half_window = self.smooth_points // 2
@@ -1175,7 +1174,8 @@ class G_Code_Rip:
             normal = math.atan2(1/abs(slope),1) - math.pi
         
         b_angle = math.degrees(normal)
-        
+        if self.singleB and self.currentB:
+            b_angle  = self.currentB
         #adjust normal angle if beyond limits
         if b_angle > 0 and b_angle > self.max_B:
             b_angle = self.max_B
@@ -1204,7 +1204,7 @@ class G_Code_Rip:
             #return_coord = {"X": x_center, "Z": z_center-self.tool_length, "B": b_angle}
             return [x_center,coord[1],z_center-self.tool_length,b_angle,radius_at_z]
                      
-    def profile_conform(self,code2conform,spline,x_coords,minB,maxB,tool,radius,radius_adjust,referenceZ):
+    def profile_conform(self,code2conform,spline,x_coords,minB,maxB,tool,radius,radius_adjust,referenceZ,singleB,smooth_points):
 
         self.spline = spline
         self.x_coords = x_coords
@@ -1214,6 +1214,9 @@ class G_Code_Rip:
         self.radius = radius
         self.radius_adjust = radius_adjust
         self.refZ = referenceZ
+        self.singleB = singleB
+        self.currentB = None
+        self.smooth_points = smooth_points
 
         mvtype = -1  # G0 (Rapid), G1 (linear), G2 (clockwise arc) or G3 (counterclockwise arc).
         passthru = ""
@@ -1229,6 +1232,9 @@ class G_Code_Rip:
         flag_side = 1  
 
         for line in code2conform:
+            if line[0] == ";" and line[1].startswith("; ending"):
+                self.currentB = None
+
             if line[0] == 1 or line[0] == 0:
                 mvtype   = line[0]
                 POS_LAST = line[1][:]
@@ -1250,8 +1256,12 @@ class G_Code_Rip:
 
             ###############################################################################
             if mvtype >= 0 and mvtype <=3:
+                  
                 pos = self.coordinate_modification(POS)
                 pos_last = self.coordinate_modification(POS_LAST)
+                if self.singleB and not self.currentB and mvtype == 1: #B of the first cutting move is our B for that object
+                    self.currentB = pos[3]
+
                 if mvtype == 0:
                     out.append( [mvtype,pos_last,pos] )
                 

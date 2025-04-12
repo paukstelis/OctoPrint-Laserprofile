@@ -118,7 +118,7 @@
             </label>
         </div>
 
-        <div>
+        <div class="flute laser">
             <label for="Arot">A-axis rotation:
             <input id="Arot" type="number" value="1" step="any" data-bind="value: Arot">
             </label>
@@ -136,7 +136,30 @@
             </label>
         </div>
 
+        <div class="advanced">
+            <details>
+                <summary>Super Advanced Features</summary>
+                <div>
+                    <label for="steps">Step size (mm):
+                    <input id="increments" type="number" value="1" step="any" data-bind="value: steps">
+                    </label>
+                </div>
+                <div>
+                    <label for="steps">B-angle smoothing (points):
+                    <input id="smoothing" type="number" min="1" value="6" step="" data-bind="value: smoothing">
+                    </label>
+                </div>
+                
+                <div class="wrap">
+                    <label for="singleB">Use single B-value for each operation:
+                       <input id="singleB" type="checkbox" data-bind="checked: singleB">
+                    </label>
+                </div>
 
+
+
+            </details>
+        </div>
 
     </div>
     <hr>
